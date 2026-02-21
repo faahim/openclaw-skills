@@ -153,19 +153,11 @@ echo "New password: $NEW_PW"
 
 ### "openssl: command not found"
 
-Falls back to `/dev/urandom` automatically. For best randomness, install OpenSSL:
-```bash
-sudo apt-get install openssl  # Debian/Ubuntu
-brew install openssl           # macOS
-```
+Falls back to `/dev/urandom` automatically. Install OpenSSL via your package manager if missing.
 
 ### "No clipboard tool found"
 
-Install a clipboard utility:
-```bash
-sudo apt-get install xclip    # Linux
-# macOS has pbcopy built-in
-```
+Install `xclip` or `xsel` via your package manager. macOS has `pbcopy` built-in.
 
 ## Dependencies
 
