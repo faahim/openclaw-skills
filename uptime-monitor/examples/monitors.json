@@ -1,0 +1,25 @@
+{
+  "monitors": [
+    {
+      "url": "https://example.com",
+      "interval": 300,
+      "timeout": 10,
+      "check_ssl": true,
+      "alert": "telegram"
+    },
+    {
+      "url": "https://api.example.com/health",
+      "interval": 60,
+      "timeout": 5,
+      "expect_body": "\"status\":\"ok\"",
+      "alert": "webhook"
+    },
+    {
+      "url": "https://staging.example.com",
+      "interval": 600,
+      "timeout": 15,
+      "expect_status": "2",
+      "alert": "email"
+    }
+  ]
+}
