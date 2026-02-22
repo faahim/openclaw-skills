@@ -1,0 +1,47 @@
+# DDNS Updater Configuration
+# Copy to ~/.config/ddns-updater/config.yaml and edit
+
+# IP detection source (optional — defaults to api.ipify.org)
+ip_check_url: "https://api.ipify.org"
+
+# Cache file for last known IP
+ip_cache_file: "/tmp/ddns-last-ip"
+
+# Log file (optional)
+log_file: "/var/log/ddns-updater.log"
+
+# DNS providers to update
+providers:
+  # Cloudflare example
+  - provider: cloudflare
+    domains:
+      - home.example.com
+    env:
+      CF_API_TOKEN: "your-cloudflare-api-token"
+      CF_ZONE_ID: "your-zone-id"
+
+  # DuckDNS example (free, no domain needed)
+  # - provider: duckdns
+  #   domains:
+  #     - myhost    # becomes myhost.duckdns.org
+  #   env:
+  #     DUCKDNS_TOKEN: "your-duckdns-token"
+
+  # Namecheap example
+  # - provider: namecheap
+  #   domains:
+  #     - home      # subdomain
+  #   zone: example.com
+  #   env:
+  #     NAMECHEAP_PASSWORD: "your-ddns-password"
+
+# Alert configuration (optional)
+alerts:
+  # Telegram alerts
+  telegram:
+    bot_token: "your-bot-token"
+    chat_id: "your-chat-id"
+
+  # Webhook alerts (e.g., Slack)
+  # webhook:
+  #   url: "https://hooks.slack.com/services/..."
