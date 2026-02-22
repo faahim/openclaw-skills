@@ -1,0 +1,2 @@
+[2026-02-22 00:56:20] ✅ https://httpbin.org/get — 200 OK (1115ms)
+[2026-02-22 00:56:26] ❌ https://httpbin.org/status/500 — HTTP 500 (expected 200) (903ms)

@@ -1,0 +1,41 @@
+{
+  "defaults": {
+    "timeout": 5,
+    "interval": 120,
+    "max_latency": 3000,
+    "retries": 2,
+    "retry_delay": 5,
+    "alert_cooldown": 300
+  },
+  "alerts": {
+    "telegram": {
+      "token": "${API_MONITOR_TELEGRAM_TOKEN}",
+      "chat_id": "${API_MONITOR_TELEGRAM_CHAT_ID}"
+    },
+    "slack": {
+      "webhook_url": "${API_MONITOR_SLACK_WEBHOOK}"
+    }
+  },
+  "monitors": [
+    {
+      "name": "Example API",
+      "url": "https://httpbin.org/get",
+      "method": "GET",
+      "expect_status": 200,
+      "interval": 120,
+      "alerts": ["telegram"]
+    },
+    {
+      "name": "Example POST",
+      "url": "https://httpbin.org/post",
+      "method": "POST",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": "{\"test\": true}",
+      "expect_status": 200,
+      "expect_json_path": ".json.test",
+      "alerts": ["telegram"]
+    }
+  ]
+}
