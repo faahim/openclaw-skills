@@ -1,0 +1,21 @@
+{
+  "critical_ports": [3306, 5432, 6379, 27017, 9200, 11211, 5984, 8529, 7474, 1433],
+  "warn_ports": [22, 21, 23, 25, 445, 3389, 5900, 8080, 8443, 2375],
+  "expected_open": [80, 443],
+  "max_open_ports": 20,
+  "flag_unversioned": true,
+  "flag_outdated_ssh": true,
+  "notes": {
+    "3306": "MySQL — should be behind firewall or VPN",
+    "5432": "PostgreSQL — should be behind firewall or VPN",
+    "6379": "Redis — no auth by default, extremely dangerous if public",
+    "27017": "MongoDB — no auth by default, extremely dangerous if public",
+    "9200": "Elasticsearch — no auth by default",
+    "11211": "Memcached — no auth, DDoS amplification risk",
+    "22": "SSH — consider key-only auth + fail2ban",
+    "21": "FTP — use SFTP instead",
+    "23": "Telnet — unencrypted, replace with SSH",
+    "3389": "RDP — high-value target, use VPN",
+    "2375": "Docker API — unauthenticated = full host compromise"
+  }
+}
