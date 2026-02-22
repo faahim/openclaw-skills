@@ -1,0 +1,30 @@
+# Disk Space Monitor Configuration
+# Copy to config.yaml and customize
+
+thresholds:
+  warning: 80       # Percent usage to trigger warning
+  critical: 95      # Percent usage to trigger critical alert
+
+alerts:
+  type: telegram     # telegram, email, webhook, or none
+  telegram_token: "" # Or set TELEGRAM_BOT_TOKEN env var
+  telegram_chat: ""  # Or set TELEGRAM_CHAT_ID env var
+
+scan:
+  exclude:           # Paths to skip during large-file search
+    - /proc
+    - /sys
+    - /dev
+    - /run
+    - /snap
+  top: 20            # Number of results in find-large
+  depth: 4           # Max depth for directory scan
+
+clean:
+  targets:           # What to clean (apt, logs, tmp, docker, journal, npm, pip)
+    - logs
+    - tmp
+  dry_run: false     # Set true to preview without deleting
+
+history:
+  file: ~/.disk-history.csv  # CSV log path
