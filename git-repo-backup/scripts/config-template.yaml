@@ -1,0 +1,28 @@
+# Git Repository Backup Configuration
+providers:
+  - type: github
+    user: your-username
+    token_env: GITHUB_TOKEN      # Reads token from this env var
+    include_private: true
+    include_forks: false
+    include_archived: true
+
+  # Uncomment for GitLab
+  # - type: gitlab
+  #   user: your-username
+  #   token_env: GITLAB_TOKEN
+  #   url: https://gitlab.com
+
+backup:
+  dir: ~/git-backups
+  threads: 4
+  mirror: true                   # Use --mirror flag (full backup incl. all refs)
+  compress_old: true             # Compress repos not updated recently
+  compress_after_days: 90
+
+notifications:
+  - type: telegram
+    on: [complete, failure]
+  # - type: webhook
+  #   url: https://hooks.slack.com/services/...
+  #   on: [failure]
