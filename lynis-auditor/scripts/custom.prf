@@ -1,0 +1,8 @@
+# Lynis custom profile
+# Add test IDs to skip tests that don't apply to your environment
+
+# Example: skip USB checks on servers
+# skip-test=USB-1000
+
+# Example: skip SNMP checks if not used
+# skip-test=SNMP-3302
