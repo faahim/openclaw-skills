@@ -1,0 +1,39 @@
+# ntfy server configuration
+# Docs: https://docs.ntfy.sh/config/
+
+# Base URL (change to your domain for self-hosted)
+# base-url: "https://ntfy.yourdomain.com"
+
+# Listen address
+listen-http: ":8080"
+
+# Set to true if behind nginx/caddy reverse proxy
+behind-proxy: false
+
+# Authentication database
+# auth-file: "/var/lib/ntfy/user.db"
+# auth-default-access: "deny-all"  # Use "read-write" for open server
+
+# Message cache
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "24h"
+
+# Attachment storage
+attachment-cache-dir: "/var/cache/ntfy/attachments"
+attachment-total-size-limit: "1G"
+attachment-file-size-limit: "15M"
+
+# Rate limiting (per visitor IP)
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: "5s"
+visitor-message-daily-limit: 500
+
+# Enable web UI
+enable-web: true
+
+# Logging
+log-level: "info"
+log-format: "text"
+
+# Upstream server (for UnifiedPush relay)
+# upstream-base-url: "https://ntfy.sh"
