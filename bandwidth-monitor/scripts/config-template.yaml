@@ -1,0 +1,22 @@
+# Bandwidth Monitor Configuration
+interface: auto          # Primary interface (auto-detect if empty/auto)
+poll_interval: 5         # Seconds between live samples
+
+thresholds:
+  daily: 50G             # Alert if daily exceeds 50 GiB
+  weekly: 300G           # Alert if weekly exceeds 300 GiB
+  monthly: 1T            # Alert if monthly exceeds 1 TiB
+  rate: 100M             # Alert if sustained rate exceeds 100 Mbit/s
+
+alerts:
+  telegram:
+    enabled: true
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+  webhook:
+    enabled: false
+    url: "https://hooks.slack.com/..."
+
+report:
+  format: table          # table or json
+  retention_months: 12   # Keep data for 12 months
