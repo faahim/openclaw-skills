@@ -1,0 +1,35 @@
+# Jellyfin Docker Compose Configuration
+# Copy to docker-compose.yml and customize
+
+version: "3.8"
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    ports:
+      - "8096:8096"       # Web UI
+      - "8920:8920"       # HTTPS (optional)
+      - "7359:7359/udp"   # Auto-discovery
+      - "1900:1900/udp"   # DLNA
+    volumes:
+      - ./config:/config
+      - ./cache:/cache
+      # Media directories (adjust paths)
+      - /media/movies:/media/movies:ro
+      - /media/tv:/media/tv:ro
+      - /media/music:/media/music:ro
+      - /media/photos:/media/photos:ro
+    environment:
+      - JELLYFIN_PublishedServerUrl=http://YOUR-IP:8096
+      # - TZ=America/New_York  # Set your timezone
+    # Intel/VAAPI hardware transcoding
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # NVIDIA hardware transcoding
+    # runtime: nvidia
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
