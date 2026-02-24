@@ -1,0 +1,47 @@
+title: "My Services"
+theme: dark
+refresh: 60
+
+checks:
+  - name: "Website"
+    type: http
+    url: "https://example.com"
+    expect_status: 200
+    timeout: 10
+
+  - name: "API Health"
+    type: http
+    url: "https://api.example.com/health"
+    expect_status: 200
+    expect_body: '"status":"ok"'
+
+  - name: "Database"
+    type: tcp
+    host: "localhost"
+    port: 5432
+    timeout: 5
+
+  - name: "Redis"
+    type: tcp
+    host: "localhost"
+    port: 6379
+
+  - name: "DNS Resolution"
+    type: dns
+    domain: "example.com"
+    record: A
+
+  - name: "App Container"
+    type: docker
+    container: "my-app"
+
+  - name: "Disk Space OK"
+    type: command
+    cmd: "test $(df / --output=pcent | tail -1 | tr -d '% ') -lt 90"
+
+alerts:
+  telegram:
+    enabled: true
+  webhook:
+    enabled: false
+    url: "https://hooks.slack.com/services/..."
