@@ -1,0 +1,12 @@
+{
+  "temperature_warn": 50,
+  "temperature_crit": 60,
+  "reallocated_warn": 1,
+  "reallocated_crit": 10,
+  "pending_warn": 1,
+  "pending_crit": 5,
+  "wear_level_warn": 20,
+  "wear_level_crit": 10,
+  "power_on_hours_warn": 35000,
+  "power_on_hours_crit": 50000
+}
