@@ -1,0 +1,17 @@
+[
+  {
+    "front": "What is a closure in JavaScript?",
+    "back": "A function that retains access to its outer scope's variables even after the outer function has returned.",
+    "tags": ["javascript", "programming"]
+  },
+  {
+    "front": "What is Big O notation?",
+    "back": "A mathematical notation describing the upper bound of an algorithm's time or space complexity as input size grows.",
+    "tags": ["algorithms", "cs"]
+  },
+  {
+    "front": "What is the difference between TCP and UDP?",
+    "back": "TCP is connection-oriented and reliable (guarantees delivery). UDP is connectionless and faster but unreliable (no delivery guarantee).",
+    "tags": ["networking"]
+  }
+]
