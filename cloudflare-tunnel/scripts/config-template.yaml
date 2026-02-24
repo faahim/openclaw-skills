@@ -1,0 +1,31 @@
+# Cloudflare Tunnel Multi-Service Config
+# Replace <TUNNEL_ID> with your actual tunnel ID (from: bash scripts/run.sh list)
+# Replace hostnames with your actual domain
+
+tunnel: <TUNNEL_ID>
+credentials-file: ~/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  # Web application
+  - hostname: app.example.com
+    service: http://localhost:3000
+    originRequest:
+      connectTimeout: 10s
+      noTLSVerify: false
+
+  # API server
+  - hostname: api.example.com
+    service: http://localhost:8080
+    originRequest:
+      connectTimeout: 30s
+
+  # Grafana dashboard
+  - hostname: grafana.example.com
+    service: http://localhost:3001
+
+  # SSH access
+  - hostname: ssh.example.com
+    service: ssh://localhost:22
+
+  # Catch-all (required — returns 404 for unmatched hostnames)
+  - service: http_status:404
