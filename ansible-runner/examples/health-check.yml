@@ -1,0 +1,76 @@
+---
+- name: Server Health Check
+  hosts: all
+  become: true
+  gather_facts: yes
+
+  tasks:
+    - name: Check disk usage
+      shell: df -h / | tail -1 | awk '{print $5}' | tr -d '%'
+      register: disk_usage
+      changed_when: false
+
+    - name: Warn on high disk usage
+      debug:
+        msg: "⚠️ Disk usage at {{ disk_usage.stdout }}% on {{ inventory_hostname }}"
+      when: disk_usage.stdout | int > 80
+
+    - name: Check memory usage
+      shell: free -m | awk '/Mem:/ {printf "%d", $3/$2*100}'
+      register: mem_usage
+      changed_when: false
+
+    - name: Warn on high memory
+      debug:
+        msg: "⚠️ Memory usage at {{ mem_usage.stdout }}% on {{ inventory_hostname }}"
+      when: mem_usage.stdout | int > 90
+
+    - name: Check load average
+      shell: cat /proc/loadavg | awk '{print $1}'
+      register: load_avg
+      changed_when: false
+
+    - name: Check uptime
+      command: uptime -p
+      register: uptime_result
+      changed_when: false
+
+    - name: Check running services
+      shell: systemctl list-units --type=service --state=running --no-pager --no-legend | wc -l
+      register: running_services
+      changed_when: false
+
+    - name: Check failed services
+      shell: systemctl --failed --no-pager --no-legend
+      register: failed_services
+      changed_when: false
+
+    - name: Warn on failed services
+      debug:
+        msg: "❌ Failed services on {{ inventory_hostname }}:\n{{ failed_services.stdout }}"
+      when: failed_services.stdout | length > 0
+
+    - name: Check SSL certificate expiry
+      shell: |
+        for domain in $(nginx -T 2>/dev/null | grep server_name | awk '{print $2}' | tr -d ';' | sort -u | head -5); do
+          expiry=$(echo | openssl s_client -servername "$domain" -connect "$domain:443" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+          if [ -n "$expiry" ]; then
+            days=$(( ($(date -d "$expiry" +%s) - $(date +%s)) / 86400 ))
+            echo "$domain: ${days} days"
+          fi
+        done
+      register: ssl_expiry
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Health summary
+      debug:
+        msg: |
+          📊 {{ inventory_hostname }} Health Report
+          ─────────────────────────────
+          💾 Disk: {{ disk_usage.stdout }}%
+          🧠 Memory: {{ mem_usage.stdout }}%
+          ⚡ Load: {{ load_avg.stdout }}
+          ⏰ Uptime: {{ uptime_result.stdout }}
+          🔧 Running services: {{ running_services.stdout }}
+          {{ '🔐 SSL: ' + ssl_expiry.stdout if ssl_expiry.stdout | default('') | length > 0 else '' }}

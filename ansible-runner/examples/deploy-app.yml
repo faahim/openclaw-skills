@@ -1,0 +1,111 @@
+---
+- name: Deploy Application from Git
+  hosts: webservers
+  become: true
+  vars:
+    repo_url: "{{ repo | default('') }}"
+    deploy_path: "{{ path | default('/opt/app') }}"
+    service_name: "{{ service | default('app') }}"
+    app_version: "{{ version | default('main') }}"
+    app_port: "{{ port | default('3000') }}"
+
+  tasks:
+    - name: Validate repo URL
+      fail:
+        msg: "repo_url is required. Use --extra-vars 'repo=git@github.com:user/app.git'"
+      when: repo_url == ''
+
+    - name: Ensure git is installed
+      apt:
+        name: git
+        state: present
+
+    - name: Clone/update repository
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ deploy_path }}"
+        version: "{{ app_version }}"
+        force: yes
+      register: git_result
+
+    - name: Detect project type
+      stat:
+        path: "{{ deploy_path }}/package.json"
+      register: has_package_json
+
+    - name: Install Node.js dependencies
+      command: npm ci --production
+      args:
+        chdir: "{{ deploy_path }}"
+      when: git_result.changed and has_package_json.stat.exists
+
+    - name: Detect Python project
+      stat:
+        path: "{{ deploy_path }}/requirements.txt"
+      register: has_requirements
+
+    - name: Install Python dependencies
+      pip:
+        requirements: "{{ deploy_path }}/requirements.txt"
+        virtualenv: "{{ deploy_path }}/venv"
+      when: git_result.changed and has_requirements.stat.exists
+
+    - name: Create systemd service
+      template:
+        src: /dev/stdin
+        dest: "/etc/systemd/system/{{ service_name }}.service"
+      args:
+        _raw_params: |
+          [Unit]
+          Description={{ service_name }}
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=deploy
+          WorkingDirectory={{ deploy_path }}
+          ExecStart=/usr/bin/node {{ deploy_path }}/index.js
+          Restart=always
+          RestartSec=5
+          Environment=NODE_ENV=production
+          Environment=PORT={{ app_port }}
+
+          [Install]
+          WantedBy=multi-user.target
+      when: has_package_json.stat.exists
+      notify: restart app
+
+    - name: Restart application
+      systemd:
+        name: "{{ service_name }}"
+        state: restarted
+        daemon_reload: yes
+        enabled: yes
+      when: git_result.changed
+
+    - name: Wait for app to start
+      wait_for:
+        port: "{{ app_port }}"
+        delay: 3
+        timeout: 30
+      ignore_errors: yes
+
+    - name: Health check
+      uri:
+        url: "http://localhost:{{ app_port }}/health"
+        status_code: [200, 301, 302]
+      register: health
+      ignore_errors: yes
+
+    - name: Deploy result
+      debug:
+        msg: >
+          {{ '✅' if health.status is defined and health.status == 200 else '⚠️' }}
+          Deployed {{ app_version }} to {{ inventory_hostname }}:{{ app_port }}
+
+  handlers:
+    - name: restart app
+      systemd:
+        name: "{{ service_name }}"
+        state: restarted
+        daemon_reload: yes
