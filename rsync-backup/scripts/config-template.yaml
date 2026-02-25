@@ -1,0 +1,42 @@
+# Rsync Backup Manager — Configuration
+# Copy this to config.yaml and edit for your setup
+
+global:
+  log_dir: /var/log/rsync-backup
+  telegram_bot_token: "${TELEGRAM_BOT_TOKEN}"
+  telegram_chat_id: "${TELEGRAM_CHAT_ID}"
+  bwlimit: 0  # KB/s, 0 = unlimited
+
+jobs:
+  - name: website
+    source: /var/www/html
+    dest: /mnt/backup/website
+    schedule: "0 */6 * * *"  # Every 6 hours
+    snapshots: true
+    retain: 30
+    exclude:
+      - "*.log"
+      - ".cache"
+      - "node_modules"
+
+  - name: database
+    source: /var/lib/postgresql/data
+    dest: /mnt/backup/postgres
+    schedule: "0 2 * * *"  # Daily 2am
+    snapshots: true
+    retain: 14
+    pre_script: "pg_dumpall -U postgres > /tmp/pgdump.sql"
+
+  - name: home
+    source: /home/user
+    dest: user@backup-server:/backups/home
+    ssh_key: ~/.ssh/backup_key
+    schedule: "0 0 * * 0"  # Weekly Sunday midnight
+    snapshots: true
+    retain: 8
+    exclude:
+      - "node_modules"
+      - ".cache"
+      - "Downloads"
+      - ".local/share/Trash"
+      - "*.tmp"
