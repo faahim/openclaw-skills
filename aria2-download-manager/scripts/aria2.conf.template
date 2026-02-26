@@ -1,0 +1,48 @@
+# aria2 Configuration
+# Copy to ~/.aria2/aria2.conf
+
+# === Download Settings ===
+dir=${HOME}/Downloads
+continue=true
+max-concurrent-downloads=5
+split=16
+max-connection-per-server=16
+min-split-size=1M
+max-tries=5
+retry-wait=10
+timeout=600
+
+# === Speed Limits (0 = unlimited) ===
+max-overall-download-limit=0
+max-download-limit=0
+max-overall-upload-limit=50K
+
+# === File Settings ===
+auto-file-renaming=true
+file-allocation=falloc
+disk-cache=64M
+
+# === Resume Support ===
+input-file=${HOME}/.aria2/aria2.session
+save-session=${HOME}/.aria2/aria2.session
+save-session-interval=30
+
+# === BitTorrent Settings ===
+enable-dht=true
+enable-dht6=true
+enable-peer-exchange=true
+bt-enable-lpd=true
+bt-max-peers=100
+bt-request-peer-speed-limit=100K
+seed-ratio=1.0
+seed-time=0
+
+# === RPC Settings (uncomment for daemon mode) ===
+# enable-rpc=true
+# rpc-listen-port=6800
+# rpc-listen-all=false
+# rpc-secret=CHANGE_ME
+
+# === Logging ===
+log-level=warn
+console-log-level=notice
