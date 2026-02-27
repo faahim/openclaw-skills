@@ -1,0 +1,16 @@
+# Webhook Relay Configuration
+# Docs: see SKILL.md for full reference
+
+server:
+  host: 0.0.0.0
+  port: 9876
+  secret: ""
+  signature_header: "X-Hub-Signature-256"
+
+routes:
+  - name: example-webhook
+    match:
+      path: /hook
+    targets:
+      - type: log
+        file: /tmp/webhook-relay.log
