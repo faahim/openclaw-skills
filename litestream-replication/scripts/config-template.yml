@@ -1,0 +1,32 @@
+# Litestream Replication Configuration
+# Docs: https://litestream.io/reference/config/
+
+# Global S3 credentials (override per-replica if needed)
+access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+
+dbs:
+  # Database 1: Your main app database
+  - path: /path/to/your/database.db
+    replicas:
+      # Primary replica: S3
+      - type: s3
+        bucket: your-bucket-name
+        path: backups/database
+        region: us-east-1
+        # endpoint: https://s3.us-west-002.backblazeb2.com  # Uncomment for B2/MinIO
+        # force-path-style: true                              # Uncomment for MinIO
+        retention: 168h              # Keep 7 days of WAL segments
+        retention-check-interval: 1h
+        validation-interval: 12h     # Verify replica integrity
+        sync-interval: 1s            # How often to push WAL changes
+        snapshot-interval: 24h       # Full snapshot frequency
+
+  # Database 2 (uncomment to add more)
+  # - path: /path/to/another.db
+  #   replicas:
+  #     - type: s3
+  #       bucket: your-bucket-name
+  #       path: backups/another
+  #       region: us-east-1
+  #       retention: 72h
