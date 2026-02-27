@@ -1,0 +1,29 @@
+% Compact Resume Template — Dense, single-page optimized
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+\definecolor{headingcolor}{HTML}{2C3E50}
+\definecolor{textcolor}{HTML}{333333}
+
+% Tight heading styles
+\titleformat{\section}{\normalsize\bfseries\uppercase\color{headingcolor}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\small\bfseries\color{headingcolor}}{}{0em}{}
+\titleformat{\subsubsection}{\small\color{headingcolor}}{}{0em}{}
+
+% Minimal spacing
+\titlespacing*{\section}{0pt}{8pt}{4pt}
+\titlespacing*{\subsection}{0pt}{6pt}{2pt}
+
+% Compact lists
+\setlist[itemize]{nosep, left=0pt, itemsep=1pt, parsep=0pt, topsep=0pt}
+
+\color{textcolor}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+
+% Smaller font
+\usepackage{geometry}
+\geometry{margin=0.5in}
+
+\pagestyle{empty}

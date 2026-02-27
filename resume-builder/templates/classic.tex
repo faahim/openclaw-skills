@@ -1,0 +1,28 @@
+% Classic Resume Template — Traditional, professional styling
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{charter}
+
+% Colors — subdued, professional
+\definecolor{headingcolor}{HTML}{1A1A1A}
+\definecolor{rulecolor}{HTML}{666666}
+\definecolor{textcolor}{HTML}{222222}
+
+% Heading styles
+\titleformat{\section}{\Large\bfseries\scshape\color{headingcolor}}{}{0em}{}[\color{rulecolor}\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{headingcolor}}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\itshape\color{headingcolor}}{}{0em}{}
+
+% Spacing
+\titlespacing*{\section}{0pt}{18pt}{10pt}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
+
+% Lists
+\setlist[itemize]{nosep, left=0pt, itemsep=3pt, parsep=0pt}
+
+\color{textcolor}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\pagestyle{plain}

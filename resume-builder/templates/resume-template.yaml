@@ -1,0 +1,61 @@
+# Resume Data — Edit this file with your details
+# Then run: bash scripts/build.sh resume.yaml
+
+name: Your Name
+title: Your Title / Role
+
+contact:
+  email: you@example.com
+  phone: "+1-555-0123"
+  location: City, State
+  linkedin: linkedin.com/in/yourname
+  github: github.com/yourname
+  website: yoursite.com
+
+summary: >-
+  Brief professional summary (2-3 sentences). Highlight years of experience,
+  key skills, and what makes you unique. Focus on impact and results.
+
+experience:
+  - company: Current Company
+    role: Senior Software Engineer
+    dates: "2022 — Present"
+    location: San Francisco, CA
+    highlights:
+      - Led project X, resulting in Y% improvement in Z
+      - Built system handling N requests/day
+      - Mentored N junior engineers
+
+  - company: Previous Company
+    role: Software Engineer
+    dates: "2019 — 2022"
+    location: Remote
+    highlights:
+      - Designed and shipped core feature used by N users
+      - Reduced deploy time by N% through CI/CD improvements
+      - Open-sourced internal tool (N GitHub stars)
+
+education:
+  - institution: University Name
+    degree: B.S. Computer Science
+    dates: "2015 — 2019"
+    gpa: "3.8"
+    highlights:
+      - Dean's List
+      - Relevant coursework or achievements
+
+skills:
+  languages: [JavaScript, TypeScript, Python, Go]
+  frameworks: [React, Node.js, Express, FastAPI]
+  infrastructure: [AWS, Docker, Kubernetes, Terraform]
+  databases: [PostgreSQL, Redis, MongoDB]
+  tools: [Git, Linux, CI/CD]
+
+certifications:
+  - name: AWS Solutions Architect
+    date: "2023"
+
+projects:
+  - name: Cool Project
+    url: github.com/you/project
+    description: Brief description of what it does and its impact

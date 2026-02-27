@@ -1,0 +1,36 @@
+% Modern Resume Template — Clean, minimal styling
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+% Colors
+\definecolor{headingcolor}{HTML}{2C3E50}
+\definecolor{accentcolor}{HTML}{3498DB}
+\definecolor{textcolor}{HTML}{333333}
+
+% Heading styles
+\titleformat{\section}{\Large\bfseries\color{headingcolor}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\large\bfseries\color{headingcolor}}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\color{headingcolor}}{}{0em}{}
+
+% Spacing
+\titlespacing*{\section}{0pt}{16pt}{8pt}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
+\titlespacing*{\subsubsection}{0pt}{8pt}{4pt}
+
+% Compact lists
+\setlist[itemize]{nosep, left=0pt, itemsep=2pt, parsep=0pt}
+
+% Body text color
+\color{textcolor}
+
+% No paragraph indent
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+% Header/footer
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0pt}
+\fancyfoot[C]{\thepage}
