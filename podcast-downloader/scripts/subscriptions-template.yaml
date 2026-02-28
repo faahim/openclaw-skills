@@ -1,0 +1,19 @@
+# Podcast Subscriptions
+# Add your RSS feed URLs below
+
+output_dir: ~/Podcasts
+max_episodes: 20
+audio_format: mp3
+audio_quality: 192k
+
+feeds:
+  - url: https://feeds.simplecast.com/54nAGcIl
+    name: The Daily
+
+  - url: https://lexfridman.com/feed/podcast/
+    name: Lex Fridman Podcast
+
+  # Add more feeds:
+  # - url: https://example.com/feed/rss
+  #   name: My Podcast
+  #   max_episodes: 10
