@@ -1,0 +1,67 @@
+# Glances Configuration
+# Copy to ~/.config/glances/glances.conf or pass with --config
+
+[global]
+# Refresh rate in seconds
+refresh=2
+# Check for updates
+check_update=False
+
+[cpu]
+# CPU usage thresholds (percentage)
+careful=50
+warning=70
+critical=90
+
+[percpu]
+# Per-CPU thresholds
+careful=50
+warning=70
+critical=90
+
+[mem]
+# Memory usage thresholds (percentage)
+careful=50
+warning=70
+critical=85
+
+[memswap]
+# Swap usage thresholds
+careful=50
+warning=70
+critical=90
+
+[load]
+# Load average thresholds (per core)
+careful=0.7
+warning=1.0
+critical=5.0
+
+[fs]
+# Filesystem usage thresholds (percentage)
+careful=50
+warning=70
+critical=90
+
+[docker]
+# Docker container monitoring
+disable=False
+
+[network]
+# Hide interfaces
+hide=lo,docker.*,veth.*,br-.*
+
+[diskio]
+# Hide disk I/O
+hide=loop.*,ram.*
+
+[processlist]
+# Process list settings
+sort_key=cpu_percent
+
+[connections]
+# Network connections
+disable=True
+
+[irq]
+disable=True
