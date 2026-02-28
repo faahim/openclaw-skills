@@ -1,0 +1,25 @@
+# Backup Verify Configuration
+# Copy this to config.yaml and customize
+
+# Path to your backup directory
+backup_path: /var/backups
+
+# Maximum age in hours before flagging as stale
+max_age_hours: 24
+
+# SHA256 checksum manifest file (optional)
+# Generate with: bash verify.sh --path /var/backups --generate-checksums
+checksum_file: /var/backups/checksums.sha256
+
+# Test archive integrity by listing contents (true/false)
+test_restore: true
+
+# Report output file (optional)
+report_file: /var/backups/verify-report.md
+
+# Command to run on failure (optional)
+# Examples:
+#   curl -s -d "Backup FAILED" ntfy.sh/my-alerts
+#   curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage?chat_id=$CHAT_ID&text=Backup+FAILED"
+#   mail -s "Backup Alert" admin@example.com < /dev/null
+alert_command: ""
