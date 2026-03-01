@@ -1,0 +1,32 @@
+#!/bin/bash
+# ============================================================
+# IP Blocklist Manager Configuration
+# Copy to config.sh and edit as needed
+# ============================================================
+
+# --- Feeds (enable/disable) ---
+FEED_SPAMHAUS_DROP=true        # Spamhaus Don't Route Or Peer list
+FEED_SPAMHAUS_EDROP=true       # Spamhaus Extended DROP
+FEED_ABUSECH_FEODO=true        # Feodo Tracker (banking trojans, C2 servers)
+FEED_ABUSECH_SSLBL=true        # SSL Blacklist (malicious SSL certificates)
+FEED_EMERGINGTHREATS=true      # Emerging Threats compromised IPs
+FEED_BLOCKLIST_DE=true         # blocklist.de fail2ban aggregated list
+FEED_CINSSCORE=false           # CI Army (large list ~15k IPs, enable if needed)
+FEED_DSHIELD=true              # DShield top attackers
+
+# --- ipset settings ---
+IPSET_NAME="ip-blocklist"      # Name of the ipset
+IPSET_MAXELEM=131072           # Max entries (increase for large lists)
+
+# --- Paths ---
+DATA_DIR="/var/lib/ip-blocklist"
+LOG_FILE="/var/log/ip-blocklist.log"
+WHITELIST_FILE="$(dirname "${BASH_SOURCE[0]}")/whitelist.txt"
+CUSTOM_FEEDS_FILE="$(dirname "${BASH_SOURCE[0]}")/custom-feeds.txt"
+
+# --- Cron ---
+CRON_SCHEDULE="0 */6 * * *"   # Every 6 hours
+
+# --- Logging ---
+LOG_BLOCKED=true               # Log blocked connections via iptables LOG target
+LOG_PREFIX="[BLOCKLIST] "      # Prefix for kernel log entries

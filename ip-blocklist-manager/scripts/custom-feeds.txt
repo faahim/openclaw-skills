@@ -1,0 +1,6 @@
+# Custom blocklist feeds — one URL per line
+# Lines starting with # are ignored
+# Format: plain text files with one IP/CIDR per line
+#
+# Example:
+# https://example.com/my-blocklist.txt
