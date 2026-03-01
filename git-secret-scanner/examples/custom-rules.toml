@@ -1,0 +1,43 @@
+# Custom Gitleaks Rules
+# Add this file alongside .gitleaks.toml in your repo root,
+# or pass via: bash run.sh --scan . --config custom-rules.toml
+
+title = "Custom Secret Detection Rules"
+
+# Extend the default ruleset
+[extend]
+useDefault = true
+
+# Add custom rules for your organization
+[[rules]]
+id = "internal-api-key"
+description = "Internal API Key Pattern"
+regex = '''(?i)(internal|private)[_-]?api[_-]?key\s*[=:]\s*['"]?([a-zA-Z0-9_\-]{32,})['"]?'''
+tags = ["internal", "api-key"]
+
+[[rules]]
+id = "database-connection-string"
+description = "Database Connection String"
+regex = '''(?i)(postgres|mysql|mongodb|redis|amqp)://[a-zA-Z0-9_]+:[^\s@'"]+@[^\s'"]+'''
+tags = ["database", "connection"]
+
+[[rules]]
+id = "jwt-token"
+description = "JWT Token"
+regex = '''eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}'''
+tags = ["jwt", "auth"]
+
+# Allowlist: paths and patterns to ignore
+[allowlist]
+description = "Global allowlist"
+paths = [
+  '''(.*?)test(.*?)\.js$''',
+  '''(.*?)\.test\.(ts|js)$''',
+  '''(.*?)mock(.*?)''',
+  '''(.*?)fixture(.*?)''',
+  '''vendor/''',
+  '''node_modules/''',
+  '''\.gitleaks\.toml$''',
+  '''package-lock\.json$''',
+  '''yarn\.lock$'''
+]
