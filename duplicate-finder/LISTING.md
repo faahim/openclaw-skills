@@ -9,47 +9,43 @@
 - **Dependencies:** [bash, find, md5sum]
 
 ## Tagline
-Find and remove duplicate files — Reclaim gigabytes of wasted disk space
+
+Find and remove duplicate files by content hash — reclaim wasted disk space instantly
 
 ## Description
 
-Duplicate files silently eat your disk space. Photos copied twice, downloads re-downloaded, backups of backups. Before you know it, you've lost gigabytes to files you already have.
+Duplicate files silently eat your disk space. Downloads copied twice, photos synced to multiple folders, backups of backups — it adds up fast. Most people have gigabytes of wasted space they don't know about.
 
-**Duplicate File Finder** scans your directories using content-based hashing to find exact duplicates — regardless of filename. It uses a fast 3-stage approach (size grouping → partial hash → full hash) that handles 100K+ files efficiently, even without specialized tools.
+Duplicate File Finder scans your directories using a fast 3-stage hashing approach: first grouping by file size, then partial hashing (first 4KB), then full content hashing. This means only actual candidate duplicates get fully hashed — making it fast even on directories with thousands of files.
 
 **What it does:**
-- 🔍 Scan one or multiple directories for exact duplicates
-- 📊 Generate detailed reports with file sizes, paths, and modification times
-- 🗑️ Safely remove duplicates with configurable keep rules (oldest, newest, shortest path)
-- 🔒 Dry-run mode — see what would be deleted before touching anything
-- 🎯 Filter by file type (images, videos, documents) or minimum size
-- ⚡ Auto-detects jdupes/fdupes for blazing-fast scans
-- 📁 Cross-directory comparison — find duplicates between your main drive and backup
+- 🔍 Scan any directory recursively for duplicate files
+- ⚡ 3-stage hashing for speed (size → partial → full)
+- 📊 Detailed reports with wasted space per group
+- 🔗 Deduplicate via hardlinks (zero data loss)
+- 🗑️ Safe deletion with dry-run preview
+- 🎯 Interactive mode — review each group before acting
+- 📋 Export as JSON or CSV for further processing
+- 🛡️ Existing hardlinks auto-detected (no false positives)
 
-Perfect for developers cleaning up project directories, photographers organizing photo libraries, or anyone who wants to reclaim disk space without risking data loss.
-
-## Quick Start Preview
-
-```bash
-# Scan a directory
-bash scripts/find-dupes.sh ~/Downloads
-
-# Find only large duplicates
-bash scripts/find-dupes.sh ~/Downloads --min-size 10M
-
-# Preview what would be deleted
-bash scripts/find-dupes.sh ~/Downloads --delete --keep oldest --dry-run
-```
+Perfect for developers cleaning up project directories, photographers managing photo libraries, or anyone wanting to reclaim disk space without risking data loss.
 
 ## Core Capabilities
 
-1. Content-based detection — Finds duplicates by file content, not filename
-2. 3-stage hashing — Fast scanning: size filter → partial hash → full hash
-3. Multiple keep strategies — Keep oldest, newest, first, or shortest path
-4. Dry-run mode — Preview deletions before committing
-5. File type filtering — Scan only images, videos, documents, etc.
-6. Size filtering — Skip small files, focus on big space wasters
-7. Cross-directory scan — Find duplicates across multiple directories
-8. Exclusion patterns — Skip node_modules, .git, vendor directories
-9. Multiple output formats — Text report, JSON, or paths-only for piping
-10. Auto-detection — Uses jdupes/fdupes when available for speed
+1. Content-based detection — finds duplicates regardless of filename
+2. 3-stage hashing — fast scanning without hashing every file
+3. Hardlink deduplication — reclaim space with zero data loss
+4. Interactive review — choose what to keep per group
+5. Dry-run mode — preview all changes before committing
+6. JSON/CSV export — pipe results to other tools
+7. Cross-directory mode — find files duplicated across locations
+8. Size filters — skip tiny files, focus on space hogs
+9. Parallel hashing — uses all CPU cores
+10. jdupes/fdupes acceleration — auto-uses fast tools if installed
+
+## Dependencies
+- `bash` (4.0+), `find`, `md5sum`, `sort`, `stat`
+- Optional: `jdupes` or `fdupes` (10-100x faster)
+
+## Installation Time
+**2 minutes** — No installation needed, runs immediately

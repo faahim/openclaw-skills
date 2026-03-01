@@ -1,144 +1,160 @@
 ---
 name: duplicate-finder
 description: >-
-  Find and remove duplicate files to reclaim disk space. Scans directories using
-  content hashing, generates reports, and safely removes duplicates.
+  Find and remove duplicate files by content hash. Reclaim disk space fast.
 categories: [automation, productivity]
-dependencies: [bash, find, md5sum]
+dependencies: [bash, find, md5sum, sort]
 ---
 
 # Duplicate File Finder
 
 ## What This Does
 
-Scans directories for duplicate files using content-based hashing (not just filenames). Generates detailed reports showing wasted space, lets you review before deleting, and supports dry-run mode. Works on any Linux/macOS system with zero external dependencies.
+Scans directories for duplicate files by computing content hashes (MD5/SHA256). Identifies wasted disk space from identical files regardless of filename. Generates reports, offers interactive or automatic deduplication via hardlinks, symlinks, or deletion.
 
-**Example:** "Scan my Downloads folder, find 2.3GB of duplicates across 847 files, review the report, then clean up."
+**Example:** "Scan ~/Downloads for duplicates, found 2.3 GB of wasted space across 847 duplicate files."
 
 ## Quick Start (2 minutes)
 
 ### 1. Scan a Directory
 
 ```bash
-bash scripts/find-dupes.sh ~/Downloads
+bash scripts/find-duplicates.sh ~/Downloads
 ```
 
 **Output:**
 ```
 🔍 Scanning ~/Downloads ...
-   Found 2,341 files (4.7 GB total)
-   Computing checksums...
-   ✅ Scan complete!
+📊 Scanned 3,247 files (12.4 GB)
+🔴 Found 847 duplicate files in 312 groups
+💾 Wasted space: 2.3 GB
 
-📊 Results:
-   Duplicate groups: 127
-   Duplicate files:  389
-   Wasted space:     1.8 GB
+Top duplicate groups:
+  1. [4 copies] photo_2024.jpg (18.2 MB each) → 54.6 MB wasted
+  2. [3 copies] backup.tar.gz (42.1 MB each) → 84.2 MB wasted
+  3. [7 copies] logo.png (1.2 MB each) → 7.2 MB wasted
 
-Report saved to: dupes-report-2026-02-28.txt
+Full report: /tmp/duplicates-report-20260301.txt
 ```
 
-### 2. Review the Report
+### 2. Install Optional Tools (Faster Scanning)
 
 ```bash
-cat dupes-report-2026-02-28.txt
+# For 10-100x faster scanning on large directories
+# Ubuntu/Debian
+sudo apt-get install -y jdupes
+
+# Mac
+brew install jdupes
+
+# Or use fdupes (slower but widely available)
+sudo apt-get install -y fdupes
 ```
 
-### 3. Remove Duplicates (keeps oldest file in each group)
-
-```bash
-bash scripts/find-dupes.sh ~/Downloads --delete --keep oldest
-```
+If jdupes/fdupes are not installed, the skill falls back to a pure bash implementation using md5sum.
 
 ## Core Workflows
 
-### Workflow 1: Scan and Report (Safe — No Deletions)
+### Workflow 1: Find Duplicates (Report Only)
 
 ```bash
-bash scripts/find-dupes.sh /path/to/scan
+# Scan directory, just report — no changes
+bash scripts/find-duplicates.sh ~/Pictures
+
+# Scan multiple directories
+bash scripts/find-duplicates.sh ~/Downloads ~/Documents ~/Desktop
+
+# Scan with minimum file size (ignore small files)
+bash scripts/find-duplicates.sh --min-size 1M ~/Downloads
+
+# Include hidden files
+bash scripts/find-duplicates.sh --hidden ~/Documents
 ```
 
-Generates a report file listing all duplicate groups with sizes, paths, and modification times.
-
-### Workflow 2: Scan Multiple Directories
+### Workflow 2: Interactive Cleanup
 
 ```bash
-bash scripts/find-dupes.sh ~/Downloads ~/Documents ~/Pictures
+# Review each duplicate group and choose what to keep
+bash scripts/find-duplicates.sh --interactive ~/Downloads
 ```
 
-Finds duplicates ACROSS directories (e.g., same photo in Downloads and Pictures).
+**Interactive output:**
+```
+--- Group 1 of 312 (3 files, 54.6 MB wasted) ---
+  [1] ~/Downloads/photo_2024.jpg (2024-03-15 14:22)
+  [2] ~/Downloads/old/photo_2024.jpg (2024-01-10 09:15)
+  [3] ~/Downloads/backup/photo_2024.jpg (2024-02-28 18:40)
 
-### Workflow 3: Delete Duplicates (Interactive)
+Keep which? (1/2/3/all/skip) >
+```
+
+### Workflow 3: Auto-Deduplicate with Hardlinks
 
 ```bash
-bash scripts/find-dupes.sh ~/Downloads --delete --keep newest --confirm
+# Replace duplicates with hardlinks (saves space, zero data loss risk)
+bash scripts/find-duplicates.sh --action hardlink ~/Pictures
+
+# Output:
+# ✅ Replaced 847 duplicates with hardlinks
+# 💾 Reclaimed: 2.3 GB
 ```
 
-Options for `--keep`:
-- `oldest` — Keep the oldest copy (by modification time)
-- `newest` — Keep the newest copy
-- `first` — Keep the first found (alphabetical path)
-- `shortest` — Keep the file with the shortest path
-
-### Workflow 4: Filter by File Type
+### Workflow 4: Dry Run Deletion
 
 ```bash
-# Only images
-bash scripts/find-dupes.sh ~/Pictures --ext "jpg,png,gif,webp"
+# See what WOULD be deleted (keeps newest file in each group)
+bash scripts/find-duplicates.sh --action delete --dry-run ~/Downloads
 
-# Only documents
-bash scripts/find-dupes.sh ~/Documents --ext "pdf,doc,docx,txt"
-
-# Only videos (large space savings)
-bash scripts/find-dupes.sh ~/Videos --ext "mp4,mkv,avi,mov"
+# Actually delete (keeps newest)
+bash scripts/find-duplicates.sh --action delete --keep newest ~/Downloads
 ```
 
-### Workflow 5: Minimum File Size Filter
+### Workflow 5: Export Report
 
 ```bash
-# Only files > 1MB (skip tiny duplicates)
-bash scripts/find-dupes.sh ~/Downloads --min-size 1M
+# JSON report for processing
+bash scripts/find-duplicates.sh --format json ~/Downloads > duplicates.json
 
-# Only files > 100MB (find big space wasters)
-bash scripts/find-dupes.sh ~/Downloads --min-size 100M
+# CSV report
+bash scripts/find-duplicates.sh --format csv ~/Downloads > duplicates.csv
 ```
-
-### Workflow 6: Dry Run with Deletion Preview
-
-```bash
-bash scripts/find-dupes.sh ~/Downloads --delete --keep oldest --dry-run
-```
-
-Shows exactly what WOULD be deleted without touching anything.
-
-### Workflow 7: Export as JSON
-
-```bash
-bash scripts/find-dupes.sh ~/Downloads --format json > dupes.json
-```
-
-Useful for programmatic processing or feeding into other tools.
 
 ## Configuration
+
+### Command-Line Options
+
+```
+Usage: find-duplicates.sh [OPTIONS] DIRECTORY [DIRECTORY...]
+
+Options:
+  --min-size SIZE      Minimum file size (e.g., 1K, 1M, 1G). Default: 1 byte
+  --max-size SIZE      Maximum file size
+  --hidden             Include hidden files/directories
+  --follow-links       Follow symbolic links
+  --exclude PATTERN    Exclude files matching glob pattern (repeatable)
+  --hash ALGO          Hash algorithm: md5 (default), sha256, sha1
+  --action ACTION      What to do: report (default), hardlink, symlink, delete
+  --keep STRATEGY      Which file to keep: newest (default), oldest, shortest-path
+  --dry-run            Show what would happen without making changes
+  --interactive        Review each group interactively
+  --format FORMAT      Output format: text (default), json, csv
+  --output FILE        Write report to file instead of stdout
+  -j, --jobs N         Parallel hashing jobs (default: nproc)
+  -q, --quiet          Only output summary
+  -v, --verbose        Show each file being hashed
+```
 
 ### Environment Variables
 
 ```bash
-# Default report directory (default: current directory)
-export DUPES_REPORT_DIR="$HOME/reports"
+# Default hash algorithm
+export DUPFINDER_HASH="md5"
 
-# Default hash algorithm (md5 is fast, sha256 is more accurate for huge datasets)
-export DUPES_HASH_ALGO="md5"  # or sha256
+# Default minimum size
+export DUPFINDER_MIN_SIZE="1K"
 
-# Exclude hidden files/directories
-export DUPES_SKIP_HIDDEN="true"
-```
-
-### Exclude Patterns
-
-```bash
-# Skip node_modules, .git, etc.
-bash scripts/find-dupes.sh ~/Projects --exclude "node_modules,.git,vendor,__pycache__"
+# Default action
+export DUPFINDER_ACTION="report"
 ```
 
 ## Advanced Usage
@@ -146,73 +162,59 @@ bash scripts/find-dupes.sh ~/Projects --exclude "node_modules,.git,vendor,__pyca
 ### Schedule Regular Scans
 
 ```bash
-# Weekly duplicate scan via cron
-0 3 * * 0 cd /path/to/skill && bash scripts/find-dupes.sh /home/user --min-size 1M --format json >> /var/log/dupes-weekly.json
+# Add to crontab — weekly scan, email report
+0 3 * * 0 bash /path/to/scripts/find-duplicates.sh --format text --quiet ~/Downloads ~/Documents > /tmp/weekly-dupes.txt 2>&1
 ```
 
 ### Pipe to Other Tools
 
 ```bash
-# Count total wasted space
-bash scripts/find-dupes.sh ~/Downloads --format json | jq '[.groups[].wasted_bytes] | add' | numfmt --to=iec
+# Find duplicates and delete interactively with fzf
+bash scripts/find-duplicates.sh --format json ~/Downloads | jq -r '.groups[].files[1:][]' | fzf --multi | xargs rm -v
 
-# Get just the files to delete
-bash scripts/find-dupes.sh ~/Downloads --delete --keep oldest --dry-run --format paths-only
+# Count wasted space per directory
+bash scripts/find-duplicates.sh --format json ~/Home | jq '[.groups[].wasted_bytes] | add'
 ```
 
 ### Compare Two Directories
 
 ```bash
-# Find files in backup that already exist in main
-bash scripts/find-dupes.sh ~/main-photos ~/backup-photos --cross-only
-```
-
-`--cross-only` shows only duplicates that span both directories (ignores duplicates within a single directory).
-
-## Troubleshooting
-
-### Issue: Scan is slow on large directories
-
-**Fix:** Use `--min-size` to skip small files, or `--ext` to filter by type:
-```bash
-bash scripts/find-dupes.sh /data --min-size 10M
-```
-
-The tool uses a two-pass approach: first groups by file size (instant), then hashes only size-matched files.
-
-### Issue: Permission denied errors
-
-**Fix:** Run with appropriate permissions or skip unreadable files:
-```bash
-bash scripts/find-dupes.sh /data 2>/dev/null
-```
-
-### Issue: Want to use jdupes/fdupes instead
-
-If `jdupes` or `fdupes` is installed, the script auto-detects and uses them for faster scanning. Install:
-```bash
-# Ubuntu/Debian
-sudo apt-get install jdupes  # or fdupes
-
-# Mac
-brew install jdupes  # or fdupes
+# Find files that exist in both dirs (cross-directory duplicates only)
+bash scripts/find-duplicates.sh --cross-only ~/Downloads ~/Backup
 ```
 
 ## How It Works
 
-1. **Size grouping** — Files with unique sizes can't be duplicates (instant filter)
-2. **Partial hash** — Hash first 4KB of size-matched files (fast filter)
-3. **Full hash** — Hash entire file only for partial-hash matches (accurate)
-4. **Report** — Group duplicates, calculate wasted space, generate report
+1. **Size grouping** — Groups files by size (different sizes = can't be duplicates)
+2. **Partial hash** — Hashes first 4KB of same-size files (fast elimination)
+3. **Full hash** — Only fully hashes files with matching partial hashes
+4. **Reporting** — Groups duplicates, calculates wasted space, outputs report
 
-This 3-stage approach makes scanning 100K+ files fast even without jdupes.
+This 3-stage approach means most files are never fully hashed, making it fast even on large directories.
+
+## Troubleshooting
+
+### Issue: "Permission denied" errors
+
+```bash
+# Run with sudo for system-wide scan, or skip unreadable:
+bash scripts/find-duplicates.sh --exclude '/proc/*' --exclude '/sys/*' /
+```
+
+### Issue: Very slow on large directories
+
+```bash
+# Use jdupes (much faster) or increase min-size to skip small files:
+bash scripts/find-duplicates.sh --min-size 100K ~/Pictures
+```
+
+### Issue: False positives with hardlinks
+
+The script automatically detects and skips existing hardlinks (same inode). No risk of flagging hardlinks as duplicates.
 
 ## Dependencies
 
 - `bash` (4.0+)
-- `find` (standard)
-- `md5sum` or `md5` (standard on Linux/macOS)
-- `stat` (standard)
-- `sort`, `awk`, `wc` (standard)
-- Optional: `jdupes` or `fdupes` (faster, auto-detected)
-- Optional: `jq` (for JSON output)
+- `find`, `md5sum`/`shasum`, `sort`, `stat` (standard on Linux/Mac)
+- Optional: `jdupes` or `fdupes` (10-100x faster)
+- Optional: `jq` (for JSON output processing)
