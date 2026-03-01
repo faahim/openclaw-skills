@@ -1,270 +1,178 @@
 ---
 name: flyio-manager
 description: >-
-  Deploy and manage applications on Fly.io — install flyctl, launch apps, manage machines, scale, secrets, and volumes from your terminal.
+  Deploy, scale, and manage applications on Fly.io — zero-downtime deployments from the terminal.
 categories: [dev-tools, automation]
-dependencies: [curl, bash]
+dependencies: [bash, curl]
 ---
 
-# Fly.io Manager
+# Fly.io App Manager
 
 ## What This Does
 
-Deploy and manage applications on Fly.io's global edge network directly from your OpenClaw agent. Install the flyctl CLI, launch new apps, manage machines, handle secrets, configure volumes, scale resources, and monitor deployments — all without leaving the terminal.
+Manage your Fly.io applications without leaving the terminal. Install flyctl, deploy apps, scale machines, manage secrets, check logs, and set up custom domains — all automated through executable scripts.
 
-**Example:** "Deploy my Node.js app to Fly.io in 3 regions with 512MB RAM, set environment secrets, and check deployment status."
+**Example:** "Deploy a Node.js app to Fly.io, scale to 2 machines in IAD, set environment secrets, and configure a custom domain with SSL."
 
 ## Quick Start (5 minutes)
 
 ### 1. Install flyctl
 
 ```bash
-# Install Fly.io CLI
-curl -L https://fly.io/install.sh | sh
-
-# Add to PATH (if not already)
-export FLYCTL_INSTALL="/home/$USER/.fly"
-export PATH="$FLYCTL_INSTALL/bin:$PATH"
-
-# Verify installation
-fly version
+bash scripts/install.sh
 ```
 
 ### 2. Authenticate
 
 ```bash
-# Interactive login (opens browser)
 fly auth login
-
-# Or use API token (headless/CI)
+# Or use a token:
 export FLY_API_TOKEN="your-token-here"
-fly auth whoami
+fly auth token
 ```
 
-### 3. Launch Your First App
+### 3. Deploy Your First App
 
 ```bash
-# From your project directory
 cd /path/to/your/app
-fly launch
-
-# Or non-interactive
-fly launch --name my-app --region sjc --no-deploy
+bash scripts/deploy.sh --init
 ```
 
 ## Core Workflows
 
-### Workflow 1: Deploy an App
+### Workflow 1: Install flyctl CLI
 
-**Use case:** Deploy a web application to Fly.io
+**Use case:** First-time setup on a new machine
 
 ```bash
-# Initialize (first time)
-cd /path/to/app
-fly launch --name my-app --region sjc
+bash scripts/install.sh
+```
 
-# Deploy (subsequent)
-fly deploy
+This will:
+- Detect your OS and architecture
+- Download the latest flyctl binary
+- Add it to your PATH
+- Verify installation
 
-# Deploy with specific Dockerfile
-fly deploy --dockerfile Dockerfile.prod
+### Workflow 2: Initialize & Deploy a New App
 
-# Deploy and wait for health checks
-fly deploy --wait-timeout 300
+**Use case:** Deploy any app (Node.js, Python, Go, Docker, static site)
+
+```bash
+# Navigate to your project
+cd /path/to/your/app
+
+# Initialize (creates fly.toml)
+bash scripts/deploy.sh --init
+
+# Deploy
+bash scripts/deploy.sh
 ```
 
 **Output:**
 ```
-==> Verifying app config
---> Verified app config
+[flyio-manager] Deploying app...
 ==> Building image
-...
 ==> Pushing image
---> Pushing image done
 ==> Creating release
---> Release v2 created
 ==> Monitoring deployment
-  1 desired, 1 placed, 1 healthy, 0 unhealthy
---> v2 deployed successfully
+✅ App deployed: https://your-app.fly.dev
 ```
 
-### Workflow 2: Manage Machines
+### Workflow 3: Scale Machines
 
-**Use case:** Scale, start, stop, or restart machines
+**Use case:** Add more instances or change machine size
 
 ```bash
-# List machines
-fly machine list -a my-app
-
 # Scale to 3 machines
-fly scale count 3 -a my-app
+bash scripts/scale.sh --count 3
 
-# Scale machine size
-fly scale vm shared-cpu-2x -a my-app
+# Change machine size
+bash scripts/scale.sh --size shared-cpu-2x --memory 512
 
-# Scale memory
-fly scale memory 512 -a my-app
-
-# Stop a machine
-fly machine stop <machine-id> -a my-app
-
-# Start a machine
-fly machine start <machine-id> -a my-app
-
-# Restart all machines
-fly apps restart my-app
+# Scale to specific regions
+bash scripts/scale.sh --count 2 --region iad,cdg
 ```
 
-### Workflow 3: Manage Secrets
+### Workflow 4: Manage Secrets
 
 **Use case:** Set environment variables securely
 
 ```bash
-# Set a secret
-fly secrets set DATABASE_URL="postgres://..." -a my-app
-
-# Set multiple secrets
-fly secrets set \
-  DATABASE_URL="postgres://..." \
-  REDIS_URL="redis://..." \
-  API_KEY="sk-..." \
-  -a my-app
-
-# Set from .env file
-cat .env | fly secrets import -a my-app
+# Set secrets
+bash scripts/secrets.sh --set DATABASE_URL="postgres://..." API_KEY="sk-..."
 
 # List secrets (names only, values hidden)
-fly secrets list -a my-app
+bash scripts/secrets.sh --list
 
-# Unset a secret
-fly secrets unset API_KEY -a my-app
+# Remove a secret
+bash scripts/secrets.sh --unset OLD_SECRET
 ```
 
-### Workflow 4: Manage Volumes
+### Workflow 5: Custom Domain & SSL
 
-**Use case:** Persistent storage for databases or file uploads
+**Use case:** Point your domain to a Fly.io app
 
 ```bash
-# Create a volume
-fly volumes create data --size 10 --region sjc -a my-app
+# Add custom domain
+bash scripts/domain.sh --add yourdomain.com
 
-# List volumes
-fly volumes list -a my-app
-
-# Extend a volume
-fly volumes extend <vol-id> --size 20 -a my-app
-
-# Delete a volume
-fly volumes destroy <vol-id> -a my-app
-
-# Snapshot a volume
-fly volumes snapshots list <vol-id> -a my-app
+# Check certificate status
+bash scripts/domain.sh --check yourdomain.com
 ```
 
-### Workflow 5: Multi-Region Deployment
+**Output:**
+```
+[flyio-manager] Adding domain yourdomain.com...
+Add these DNS records:
+  CNAME: yourdomain.com → your-app.fly.dev
+  (or A record if apex domain)
+✅ Certificate will be auto-provisioned once DNS propagates
+```
 
-**Use case:** Deploy globally for low latency
+### Workflow 6: View Logs & Status
+
+**Use case:** Debug issues, monitor health
 
 ```bash
-# Set primary region
-fly regions set sjc -a my-app
+# Stream live logs
+bash scripts/status.sh --logs
 
-# Add backup regions
-fly regions add iad lhr nrt -a my-app
+# App status overview
+bash scripts/status.sh
 
-# List regions
-fly regions list -a my-app
-
-# Scale across regions
-fly scale count 2 --region sjc -a my-app
-fly scale count 1 --region iad -a my-app
+# Check machine health
+bash scripts/status.sh --machines
 ```
 
-### Workflow 6: Database Management
+### Workflow 7: Database Setup (Fly Postgres)
 
-**Use case:** Create and manage Fly Postgres
+**Use case:** Provision a managed Postgres database
 
 ```bash
 # Create Postgres cluster
-fly postgres create --name my-db --region sjc
+bash scripts/database.sh --create --name myapp-db --region iad
 
-# Attach to app
-fly postgres attach my-db -a my-app
+# Attach to app (sets DATABASE_URL automatically)
+bash scripts/database.sh --attach --db myapp-db --app myapp
 
-# Connect to Postgres
-fly postgres connect -a my-db
-
-# List databases
-fly postgres db list -a my-db
-
-# Create a database
-fly postgres db create my_new_db -a my-db
+# Connect via psql
+bash scripts/database.sh --connect --db myapp-db
 ```
 
-### Workflow 7: Monitor & Debug
+### Workflow 8: Zero-Downtime Deploy with Health Checks
 
-**Use case:** Check app status, logs, and health
+**Use case:** Production deployments with rollback
 
 ```bash
-# Check app status
-fly status -a my-app
+# Deploy with canary strategy
+bash scripts/deploy.sh --strategy canary
 
-# View logs (real-time)
-fly logs -a my-app
+# Deploy with immediate rollback on failure
+bash scripts/deploy.sh --strategy rolling --wait-timeout 120
 
-# View recent logs
-fly logs -a my-app --no-tail
-
-# SSH into a running machine
-fly ssh console -a my-app
-
-# Run a one-off command
-fly ssh console -a my-app -C "node scripts/migrate.js"
-
-# Check VM metrics
-fly machine status <machine-id> -a my-app
-```
-
-### Workflow 8: Custom Domains & SSL
-
-**Use case:** Point your domain to your Fly app
-
-```bash
-# Add a custom domain
-fly certs add mydomain.com -a my-app
-
-# Check certificate status
-fly certs show mydomain.com -a my-app
-
-# List all certificates
-fly certs list -a my-app
-
-# Remove a certificate
-fly certs remove mydomain.com -a my-app
-```
-
-**DNS Setup:**
-```
-# Add these DNS records:
-# A    @ → <app-ipv4>   (from `fly ips list`)
-# AAAA @ → <app-ipv6>
-# CNAME www → my-app.fly.dev
-```
-
-### Workflow 9: Manage IPs
-
-```bash
-# List IPs
-fly ips list -a my-app
-
-# Allocate dedicated IPv4
-fly ips allocate-v4 -a my-app
-
-# Allocate IPv6
-fly ips allocate-v6 -a my-app
-
-# Release an IP
-fly ips release <ip-address> -a my-app
+# Rollback to previous version
+bash scripts/deploy.sh --rollback
 ```
 
 ## Configuration
@@ -272,200 +180,129 @@ fly ips release <ip-address> -a my-app
 ### fly.toml Reference
 
 ```toml
-# fly.toml — Fly.io app configuration
-app = "my-app"
-primary_region = "sjc"
+# fly.toml — auto-generated on init, customize as needed
+app = "your-app-name"
+primary_region = "iad"
 
 [build]
+  # Dockerfile (default) or buildpacks
   dockerfile = "Dockerfile"
 
 [env]
-  NODE_ENV = "production"
   PORT = "8080"
+  NODE_ENV = "production"
 
 [http_service]
   internal_port = 8080
   force_https = true
   auto_stop_machines = true
   auto_start_machines = true
-  min_machines_running = 1
-
-  [http_service.concurrency]
-    type = "requests"
-    hard_limit = 250
-    soft_limit = 200
 
 [[vm]]
-  cpu_kind = "shared"
-  cpus = 1
-  memory_mb = 512
-
-[[mounts]]
-  source = "data"
-  destination = "/data"
+  size = "shared-cpu-1x"
+  memory = "256mb"
 
 [checks]
-  [checks.health]
-    type = "http"
+  [checks.alive]
+    type = "tcp"
     port = 8080
-    path = "/health"
-    interval = "10s"
+    interval = "15s"
     timeout = "2s"
-    grace_period = "5s"
 ```
 
 ### Environment Variables
 
 ```bash
-# Authentication
-export FLY_API_TOKEN="fo1_..."
+# Authentication (one of these)
+export FLY_API_TOKEN="your-token"  # For CI/CD
+# Or: fly auth login (interactive)
 
-# Default app (skip -a flag)
-export FLY_APP="my-app"
+# Optional: default app name
+export FLY_APP="your-app-name"
 
-# Default region
-export FLY_REGION="sjc"
+# Optional: default region
+export FLY_REGION="iad"
 ```
 
 ## Advanced Usage
 
-### Blue-Green Deployments
+### CI/CD Integration
 
 ```bash
-# Deploy without promoting
-fly deploy --strategy bluegreen -a my-app
-
-# Check new machines
-fly machine list -a my-app
-
-# Promote manually if healthy
-fly deploy --strategy immediate -a my-app
+# In your GitHub Actions / CI pipeline:
+export FLY_API_TOKEN="${{ secrets.FLY_API_TOKEN }}"
+bash scripts/install.sh
+bash scripts/deploy.sh --app myapp
 ```
 
-### Autoscaling
+### Multi-Region Deployment
 
 ```bash
-# Enable autoscaling
-fly autoscale set min=1 max=10 -a my-app
+# Deploy to multiple regions
+bash scripts/scale.sh --region iad,lhr,nrt --count 1
 
-# Check autoscale config
-fly autoscale show -a my-app
+# Check region distribution
+bash scripts/status.sh --machines
 ```
 
-### WireGuard Tunnel (Private Network)
+### Volume Management
 
 ```bash
-# Create WireGuard peer
+# Create a persistent volume
+fly volumes create mydata --region iad --size 10
+
+# List volumes
+fly volumes list
+```
+
+### Wireguard Tunnel (Private Networking)
+
+```bash
+# Set up private connection to your Fly network
 fly wireguard create
-
-# List peers
-fly wireguard list
-
-# Access internal services
-# Apps communicate via <app>.internal on port 6pn
-```
-
-### Proxy to Local Machine
-
-```bash
-# Forward remote port to local
-fly proxy 5432:5432 -a my-db
-
-# Access Postgres locally
-psql postgres://localhost:5432/my_db
 ```
 
 ## Troubleshooting
 
-### Issue: "Error: could not find app"
+### Issue: "Error: app not found"
 
-**Fix:**
+**Fix:** Make sure you're in the directory with `fly.toml`, or specify `--app`:
 ```bash
-# Check app name
-fly apps list
-
-# Set default app
-export FLY_APP="correct-app-name"
+bash scripts/deploy.sh --app your-app-name
 ```
 
-### Issue: Deploy fails with health check timeout
+### Issue: Deployment fails with health check timeout
 
-**Fix:**
+**Fix:** Increase timeout or check your app's startup time:
 ```bash
-# Increase timeout
-fly deploy --wait-timeout 600
-
-# Or adjust fly.toml
-# [checks.health]
-#   timeout = "10s"
-#   grace_period = "30s"
+bash scripts/deploy.sh --wait-timeout 300
 ```
 
-### Issue: Machine keeps restarting
+### Issue: Out of memory
 
-**Fix:**
+**Fix:** Scale up machine size:
 ```bash
-# Check logs for crash reason
-fly logs -a my-app
-
-# SSH in to debug
-fly ssh console -a my-app
-
-# Check if port matches fly.toml internal_port
+bash scripts/scale.sh --size shared-cpu-2x --memory 512
 ```
 
-### Issue: Volume not mounting
+### Issue: "Error: Insufficient resources"
 
-**Fix:**
+**Fix:** You may have hit free tier limits. Check usage:
 ```bash
-# Verify volume exists in same region as machine
-fly volumes list -a my-app
-
-# Ensure fly.toml has correct mount config
-# [[mounts]]
-#   source = "data"
-#   destination = "/data"
+fly orgs show
 ```
-
-### Issue: "Out of memory" crashes
-
-**Fix:**
-```bash
-# Scale memory
-fly scale memory 1024 -a my-app
-
-# Check current allocation
-fly scale show -a my-app
-```
-
-## Fly.io Regions Reference
-
-| Code | Location |
-|------|----------|
-| sjc | San Jose, CA |
-| iad | Ashburn, VA |
-| lhr | London, UK |
-| nrt | Tokyo, Japan |
-| sin | Singapore |
-| syd | Sydney, Australia |
-| cdg | Paris, France |
-| fra | Frankfurt, Germany |
-| gru | São Paulo, Brazil |
-| bom | Mumbai, India |
-
-Full list: `fly platform regions`
 
 ## Key Principles
 
-1. **Deploy fast** — `fly launch` → `fly deploy` in minutes
-2. **Scale globally** — Multi-region with one command
-3. **Secrets are secrets** — Never put sensitive values in fly.toml
-4. **Volumes are regional** — Create in same region as machines
-5. **Auto-stop saves money** — Enable `auto_stop_machines` for dev apps
-6. **Health checks matter** — Always configure them for zero-downtime deploys
+1. **Deploy fast** — Push to production in under 2 minutes
+2. **Scale anywhere** — 30+ regions worldwide
+3. **Zero-downtime** — Rolling deployments by default
+4. **Secure** — Secrets encrypted, SSL auto-provisioned
+5. **Cost-effective** — Pay per machine-second, auto-stop idle machines
 
 ## Dependencies
 
+- `bash` (4.0+)
 - `curl` (for installation)
-- `flyctl` (installed by this skill)
-- Docker (for building images, optional if using buildpacks)
+- `flyctl` (auto-installed by scripts/install.sh)
+- Optional: `docker` (for custom Dockerfiles)

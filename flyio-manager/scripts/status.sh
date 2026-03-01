@@ -1,60 +1,51 @@
 #!/bin/bash
-# Fly.io Manager — Status Check
-# Shows overview of all Fly.io apps and their status
+# Check Fly.io app status, logs, and machine health
+# Usage: bash status.sh [--logs] [--machines] [--app NAME]
 
 set -euo pipefail
 
-APP_NAME="${1:-}"
+PREFIX="[flyio-manager]"
+ACTION="status"
+APP=""
 
-if [[ -z "$APP_NAME" ]]; then
-    echo "📊 Fly.io Account Overview"
-    echo "=========================="
-    echo ""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --logs) ACTION="logs"; shift ;;
+        --machines) ACTION="machines"; shift ;;
+        --app) APP="$2"; shift 2 ;;
+        *) echo "$PREFIX Unknown option: $1"; exit 1 ;;
+    esac
+done
 
-    # List all apps
-    echo "📱 Apps:"
-    fly apps list 2>/dev/null || { echo "❌ Not authenticated. Run: fly auth login"; exit 1; }
-
-    echo ""
-
-    # Show organizations
-    echo "🏢 Organizations:"
-    fly orgs list 2>/dev/null
-
-    echo ""
-
-    # Show current auth
-    echo "👤 Authenticated as:"
-    fly auth whoami 2>/dev/null
-else
-    echo "📊 App Status: $APP_NAME"
-    echo "=========================="
-    echo ""
-
-    # App status
-    fly status -a "$APP_NAME"
-
-    echo ""
-    echo "🌐 IPs:"
-    fly ips list -a "$APP_NAME" 2>/dev/null
-
-    echo ""
-    echo "📦 Machines:"
-    fly machine list -a "$APP_NAME" 2>/dev/null
-
-    echo ""
-    echo "💾 Volumes:"
-    fly volumes list -a "$APP_NAME" 2>/dev/null
-
-    echo ""
-    echo "🔐 Secrets:"
-    fly secrets list -a "$APP_NAME" 2>/dev/null
-
-    echo ""
-    echo "🌍 Regions:"
-    fly regions list -a "$APP_NAME" 2>/dev/null
-
-    echo ""
-    echo "📜 Recent Logs:"
-    fly logs -a "$APP_NAME" --no-tail 2>/dev/null | tail -20
+if ! command -v fly &>/dev/null; then
+    echo "$PREFIX flyctl not found. Run: bash scripts/install.sh"
+    exit 1
 fi
+
+APP_FLAG=""
+[[ -n "$APP" ]] && APP_FLAG="--app $APP"
+
+case "$ACTION" in
+    status)
+        echo "$PREFIX App Status:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        fly status $APP_FLAG
+        echo ""
+        echo "$PREFIX IPs:"
+        fly ips list $APP_FLAG 2>/dev/null || true
+        echo ""
+        echo "$PREFIX Recent releases:"
+        fly releases $APP_FLAG --limit 5 2>/dev/null || true
+        ;;
+    logs)
+        echo "$PREFIX Streaming logs (Ctrl+C to stop)..."
+        fly logs $APP_FLAG
+        ;;
+    machines)
+        echo "$PREFIX Machine details:"
+        fly machine list $APP_FLAG
+        echo ""
+        echo "$PREFIX Scale config:"
+        fly scale show $APP_FLAG 2>/dev/null || true
+        ;;
+esac

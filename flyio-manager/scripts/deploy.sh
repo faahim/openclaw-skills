@@ -1,80 +1,97 @@
 #!/bin/bash
-# Fly.io Manager — Deploy Script
-# Deploy an app with configurable options
+# Deploy application to Fly.io
+# Usage: bash deploy.sh [--init] [--app NAME] [--strategy canary|rolling] [--rollback] [--wait-timeout SEC]
 
 set -euo pipefail
 
-usage() {
-    echo "Usage: $0 [options]"
-    echo ""
-    echo "Options:"
-    echo "  -a, --app NAME        App name (or set FLY_APP)"
-    echo "  -r, --region REGION   Primary region (default: sjc)"
-    echo "  -d, --dockerfile FILE Dockerfile path (default: Dockerfile)"
-    echo "  -t, --timeout SECS    Wait timeout (default: 300)"
-    echo "  -s, --strategy STR    Deploy strategy: immediate|bluegreen|rolling|canary"
-    echo "  --no-cache            Build without cache"
-    echo "  --init                Initialize new app (fly launch)"
-    echo "  -h, --help            Show this help"
-    exit 0
-}
-
-APP_NAME="${FLY_APP:-}"
-REGION="sjc"
-DOCKERFILE=""
-TIMEOUT=300
-STRATEGY=""
-NO_CACHE=""
+PREFIX="[flyio-manager]"
+APP=""
 INIT=false
+STRATEGY=""
+ROLLBACK=false
+WAIT_TIMEOUT=120
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -a|--app) APP_NAME="$2"; shift 2 ;;
-        -r|--region) REGION="$2"; shift 2 ;;
-        -d|--dockerfile) DOCKERFILE="$2"; shift 2 ;;
-        -t|--timeout) TIMEOUT="$2"; shift 2 ;;
-        -s|--strategy) STRATEGY="$2"; shift 2 ;;
-        --no-cache) NO_CACHE="--no-cache"; shift ;;
         --init) INIT=true; shift ;;
-        -h|--help) usage ;;
-        *) echo "Unknown option: $1"; usage ;;
+        --app) APP="$2"; shift 2 ;;
+        --strategy) STRATEGY="$2"; shift 2 ;;
+        --rollback) ROLLBACK=true; shift ;;
+        --wait-timeout) WAIT_TIMEOUT="$2"; shift 2 ;;
+        *) echo "$PREFIX Unknown option: $1"; exit 1 ;;
     esac
 done
 
-if $INIT; then
-    echo "🚀 Initializing new Fly.io app..."
-    CMD="fly launch --region $REGION"
-    [[ -n "$APP_NAME" ]] && CMD="$CMD --name $APP_NAME"
-    echo "Running: $CMD"
-    eval "$CMD"
+# Check flyctl
+if ! command -v fly &>/dev/null; then
+    echo "$PREFIX flyctl not found. Run: bash scripts/install.sh"
+    exit 1
+fi
+
+# Check auth
+if ! fly auth whoami &>/dev/null 2>&1; then
+    echo "$PREFIX Not authenticated. Run: fly auth login"
+    exit 1
+fi
+
+APP_FLAG=""
+[[ -n "$APP" ]] && APP_FLAG="--app $APP"
+
+# Rollback
+if $ROLLBACK; then
+    echo "$PREFIX Rolling back to previous release..."
+    RELEASES=$(fly releases $APP_FLAG --json 2>/dev/null)
+    PREV=$(echo "$RELEASES" | jq -r '.[1].Version // empty')
+    if [[ -z "$PREV" ]]; then
+        echo "$PREFIX No previous release to rollback to"
+        exit 1
+    fi
+    fly deploy $APP_FLAG --image-ref "$(echo "$RELEASES" | jq -r '.[1].ImageRef')"
+    echo "$PREFIX ✅ Rolled back to version $PREV"
     exit 0
 fi
 
-if [[ -z "$APP_NAME" ]]; then
-    # Try to detect from fly.toml
+# Initialize
+if $INIT; then
     if [[ -f "fly.toml" ]]; then
-        APP_NAME=$(grep '^app' fly.toml | head -1 | sed 's/app = "\(.*\)"/\1/' | tr -d '"' | tr -d ' ')
-    fi
-    if [[ -z "$APP_NAME" ]]; then
-        echo "❌ No app specified. Use -a flag or set FLY_APP or have fly.toml"
+        echo "$PREFIX fly.toml already exists. Delete it first to re-init."
         exit 1
     fi
+    echo "$PREFIX Initializing new Fly.io app..."
+    fly launch --no-deploy $APP_FLAG
+    echo "$PREFIX ✅ App initialized. Edit fly.toml, then run: bash scripts/deploy.sh"
+    exit 0
 fi
 
-echo "🚀 Deploying $APP_NAME..."
-echo "   Region: $REGION"
-echo "   Timeout: ${TIMEOUT}s"
-[[ -n "$STRATEGY" ]] && echo "   Strategy: $STRATEGY"
+# Check fly.toml
+if [[ ! -f "fly.toml" ]] && [[ -z "$APP" ]]; then
+    echo "$PREFIX No fly.toml found. Run with --init first, or specify --app NAME"
+    exit 1
+fi
+
+# Build deploy command
+DEPLOY_CMD="fly deploy $APP_FLAG --wait-timeout ${WAIT_TIMEOUT}"
+
+case "$STRATEGY" in
+    canary)
+        DEPLOY_CMD="$DEPLOY_CMD --strategy canary"
+        echo "$PREFIX Deploying with canary strategy..."
+        ;;
+    rolling)
+        DEPLOY_CMD="$DEPLOY_CMD --strategy rolling"
+        echo "$PREFIX Deploying with rolling strategy..."
+        ;;
+    *)
+        echo "$PREFIX Deploying..."
+        ;;
+esac
+
+# Deploy
+eval $DEPLOY_CMD
+
+# Get app URL
+APP_NAME=${APP:-$(grep '^app' fly.toml 2>/dev/null | sed 's/app = "\(.*\)"/\1/' | tr -d '"' | tr -d ' ')}
 echo ""
-
-CMD="fly deploy -a $APP_NAME --wait-timeout $TIMEOUT"
-[[ -n "$DOCKERFILE" ]] && CMD="$CMD --dockerfile $DOCKERFILE"
-[[ -n "$STRATEGY" ]] && CMD="$CMD --strategy $STRATEGY"
-[[ -n "$NO_CACHE" ]] && CMD="$CMD $NO_CACHE"
-
-echo "Running: $CMD"
-eval "$CMD"
-
-echo ""
-echo "✅ Deployment complete!"
-fly status -a "$APP_NAME"
+echo "$PREFIX ✅ Deployed: https://${APP_NAME}.fly.dev"
+echo "$PREFIX    Status:  fly status $APP_FLAG"
+echo "$PREFIX    Logs:    fly logs $APP_FLAG"

@@ -1,36 +1,35 @@
-# Listing Copy: Fly.io Manager
+# Listing Copy: Fly.io App Manager
 
 ## Metadata
 - **Type:** Skill
 - **Name:** flyio-manager
-- **Display Name:** Fly.io Manager
+- **Display Name:** Fly.io App Manager
 - **Categories:** [dev-tools, automation]
 - **Price:** $12
-- **Dependencies:** [curl, bash]
+- **Dependencies:** [bash, curl, flyctl]
+- **Icon:** 🚀
 
 ## Tagline
 
-Deploy and manage apps on Fly.io — global edge deployment from your terminal
+Deploy, scale, and manage Fly.io apps — zero-downtime deployments from the terminal
 
 ## Description
 
-Deploying apps shouldn't require clicking through dashboards. With Fly.io Manager, your OpenClaw agent handles the entire deployment lifecycle — from installing the CLI to scaling across regions.
+Managing Fly.io deployments means juggling flyctl commands, remembering region codes, configuring SSL, and handling rollbacks manually. One wrong command and your production app is down.
 
-Fly.io Manager wraps the flyctl CLI into agent-friendly workflows. Launch new apps, deploy updates, manage secrets and volumes, configure custom domains, and monitor deployments — all through natural conversation with your agent.
+Fly.io App Manager gives your OpenClaw agent everything it needs to deploy and manage Fly.io applications. Install flyctl, initialize apps, deploy with zero-downtime strategies, scale across regions, manage secrets, set up custom domains with auto-SSL, and provision Postgres databases — all through executable scripts.
 
 **What it does:**
-- 🚀 Install flyctl and authenticate in one step
-- 📦 Deploy apps with Docker or buildpacks
-- 🌍 Scale across 30+ global regions
-- 🔐 Manage secrets securely (set, import from .env, unset)
-- 💾 Create and manage persistent volumes
-- 🔒 Custom domains with automatic SSL
-- 📊 Monitor status, logs, and machine health
-- 🐘 Spin up managed Postgres databases
-- 🔧 SSH into running machines for debugging
-- ⚡ Blue-green and rolling deployment strategies
+- 🚀 Deploy apps with canary or rolling strategies
+- 📈 Scale machines across 30+ global regions
+- 🔑 Manage secrets and environment variables securely
+- 🌐 Configure custom domains with automatic SSL
+- 🗄️ Provision and attach Fly Postgres databases
+- ↩️ One-command rollback to previous versions
+- 📊 Monitor app status, logs, and machine health
+- ⚡ CI/CD ready with token-based authentication
 
-Perfect for developers and teams who want fast, repeatable deployments without leaving their terminal. Works great for Node.js, Python, Go, Ruby, Rust, Elixir, and any Docker-based app.
+Perfect for developers and teams deploying web apps, APIs, and services on Fly.io who want their AI agent to handle infrastructure.
 
 ## Quick Start Preview
 
@@ -39,29 +38,41 @@ Perfect for developers and teams who want fast, repeatable deployments without l
 bash scripts/install.sh
 
 # Deploy your app
-cd my-app && fly launch
+cd /path/to/app
+bash scripts/deploy.sh --init
+bash scripts/deploy.sh
 
-# Scale globally
-fly scale count 3 --region sjc,iad,lhr
+# Scale to 3 machines across regions
+bash scripts/scale.sh --count 3 --region iad,lhr
 ```
 
 ## Core Capabilities
 
-1. CLI installation — One-command install with PATH setup
-2. App deployment — Docker builds, buildpacks, multi-stage
-3. Global scaling — 30+ regions, multi-region with one command
-4. Secret management — Set, import, list, unset environment secrets
-5. Volume management — Create, extend, snapshot persistent storage
-6. Custom domains — Add domains with automatic Let's Encrypt SSL
-7. Database management — Managed Postgres with attach/connect
-8. Machine control — Start, stop, restart, scale VM size and memory
-9. Deployment strategies — Blue-green, rolling, canary deployments
-10. Monitoring — Real-time logs, status checks, SSH debugging
+1. CLI installation — Auto-detect OS/arch, install flyctl, configure PATH
+2. App deployment — Initialize and deploy with fly.toml configuration
+3. Zero-downtime deploys — Canary and rolling deployment strategies
+4. Machine scaling — Scale count, size, and memory across regions
+5. Secret management — Set, list, and remove encrypted environment variables
+6. Custom domains — Add domains with automatic SSL certificate provisioning
+7. Database provisioning — Create, attach, and connect to Fly Postgres
+8. Instant rollback — Revert to previous release in one command
+9. Status monitoring — View app health, machine list, and recent releases
+10. Log streaming — Real-time log tailing for debugging
+11. CI/CD integration — Token-based auth for automated pipelines
+12. Multi-region — Deploy across 30+ worldwide edge locations
 
 ## Dependencies
-- `curl`
 - `bash` (4.0+)
-- Docker (optional, for custom builds)
+- `curl`
+- `flyctl` (auto-installed)
 
 ## Installation Time
-**5 minutes** — Install CLI, authenticate, deploy
+**5 minutes** — Run install script, authenticate, deploy
+
+## Pricing Justification
+
+**Why $12:**
+- Fly.io is a top deployment platform with growing adoption
+- Covers 7 executable scripts with real automation
+- Comparable tools: manual flyctl docs (free but time-consuming)
+- One-time payment saves hours of deployment configuration
