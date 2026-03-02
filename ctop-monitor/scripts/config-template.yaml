@@ -1,0 +1,26 @@
+# Ctop Container Monitor Configuration
+thresholds:
+  cpu_warn: 80
+  cpu_crit: 95
+  mem_warn: 85
+  mem_crit: 95
+
+alerts:
+  telegram:
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+  webhook:
+    url: ""  # Slack/Discord webhook URL
+
+logging:
+  enabled: true
+  interval: 300
+  output: logs/container-stats.csv
+  retention_days: 30
+
+actions:
+  restart_on_crit: false
+  cooldown: 300
+  exclude:
+    - "postgres"
+    - "mysql"
