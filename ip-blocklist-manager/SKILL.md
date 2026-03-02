@@ -1,239 +1,253 @@
 ---
 name: ip-blocklist-manager
 description: >-
-  Download threat intelligence feeds, manage IP blocklists with ipset/iptables, and auto-update daily to block malicious traffic.
+  Download threat intelligence blocklists and block malicious IPs with iptables/nftables/ufw. Auto-update daily.
 categories: [security, automation]
-dependencies: [bash, curl, ipset, iptables, jq]
+dependencies: [bash, curl, ipset, iptables]
 ---
 
 # IP Blocklist Manager
 
 ## What This Does
 
-Automatically downloads IP blocklists from threat intelligence feeds (abuse.ch, Spamhaus DROP, Emerging Threats, etc.), loads them into Linux ipset/iptables rules, and schedules daily updates. Blocks malicious IPs at the kernel level — botnets, scanners, known attackers — without any external service or subscription.
+Automatically downloads curated threat intelligence IP blocklists (botnets, scanners, spammers, brute-forcers), loads them into Linux ipset/iptables, and keeps them updated on a schedule. Blocks thousands of known-bad IPs with zero manual effort.
 
-**Example:** "Download 5 threat feeds, block 50,000+ malicious IPs, auto-update every 6 hours, log blocked connections."
+**Example:** "Download 5 blocklists covering 50,000+ malicious IPs, load into ipset, auto-update every 6 hours, get alerts on blocked traffic."
 
 ## Quick Start (5 minutes)
 
 ### 1. Install Dependencies
 
 ```bash
-# Most Linux systems already have iptables. Install ipset if missing:
-sudo apt-get install -y ipset curl jq  # Debian/Ubuntu
-# or
-sudo yum install -y ipset curl jq      # RHEL/CentOS
+# Most Linux systems have iptables. Install ipset for efficient bulk blocking:
+sudo apt-get install -y ipset curl   # Debian/Ubuntu
+# OR
+sudo yum install -y ipset curl       # RHEL/CentOS
+# OR
+sudo pacman -S ipset curl            # Arch
 ```
 
-### 2. Configure Feeds
+### 2. Run First Blocklist Update
 
 ```bash
-# Copy the default config
-cp scripts/config.sh.example scripts/config.sh
-
-# Edit to enable/disable feeds, set alert preferences
-nano scripts/config.sh
-```
-
-### 3. Run First Blocklist Update
-
-```bash
-# Download feeds and apply rules (requires root/sudo)
-sudo bash scripts/run.sh --apply
+# Download blocklists and apply — requires root/sudo
+sudo bash scripts/blocklist.sh update
 
 # Output:
-# [2026-03-01 20:00:00] Downloading Spamhaus DROP... 842 IPs
-# [2026-03-01 20:00:02] Downloading abuse.ch Feodo... 1,247 IPs
-# [2026-03-01 20:00:03] Downloading Emerging Threats... 3,891 IPs
-# [2026-03-01 20:00:04] Loading 5,980 unique IPs into ipset 'blocklist'
-# [2026-03-01 20:00:05] ✅ iptables DROP rule active — blocking 5,980 malicious IPs
+# [2026-03-02 20:00:00] 📥 Downloading firehol_level1... 2,847 IPs
+# [2026-03-02 20:00:01] 📥 Downloading spamhaus_drop... 1,124 IPs  
+# [2026-03-02 20:00:02] 📥 Downloading blocklist_de... 18,432 IPs
+# [2026-03-02 20:00:03] 📥 Downloading emerging_threats... 4,291 IPs
+# [2026-03-02 20:00:04] 📥 Downloading dshield_top20... 620 IPs
+# [2026-03-02 20:00:05] ✅ Loaded 27,314 unique IPs into ipset 'blocklist'
+# [2026-03-02 20:00:05] 🔒 iptables DROP rule active for set 'blocklist'
 ```
 
-### 4. Schedule Auto-Updates
+### 3. Verify It's Working
 
 ```bash
-# Add cron job to update every 6 hours
-sudo bash scripts/run.sh --install-cron
+# Check how many IPs are blocked
+sudo bash scripts/blocklist.sh status
 
-# Verify:
-sudo crontab -l | grep blocklist
-# 0 */6 * * * /path/to/scripts/run.sh --apply --quiet >> /var/log/ip-blocklist.log 2>&1
+# Test if a known-bad IP is blocked
+sudo bash scripts/blocklist.sh check 185.220.101.1
+
+# View recent blocked connections (requires logging enabled)
+sudo bash scripts/blocklist.sh log --tail 20
 ```
 
 ## Core Workflows
 
-### Workflow 1: One-Time Block
+### Workflow 1: Update Blocklists
 
-**Use case:** Quickly block known bad IPs without persistence
+**Use case:** Refresh all blocklists with latest threat intelligence
 
 ```bash
-sudo bash scripts/run.sh --apply --no-persist
+sudo bash scripts/blocklist.sh update
 ```
 
-### Workflow 2: Full Setup with Persistence
+**Flags:**
+- `--lists firehol,spamhaus` — Update specific lists only
+- `--dry-run` — Download and parse but don't apply
+- `--verbose` — Show per-IP details
 
-**Use case:** Production server protection with auto-updates
-
-```bash
-# Apply rules + save for reboot persistence + install cron
-sudo bash scripts/run.sh --apply --persist --install-cron
-```
-
-### Workflow 3: Dry Run (Preview Only)
-
-**Use case:** See what would be blocked without applying
+### Workflow 2: Check Blocklist Status
 
 ```bash
-bash scripts/run.sh --dry-run
+sudo bash scripts/blocklist.sh status
 
 # Output:
-# [DRY RUN] Would block 5,980 IPs from 3 feeds
-# Top sources:
-#   Emerging Threats: 3,891
-#   abuse.ch Feodo:   1,247
-#   Spamhaus DROP:      842
+# IP Blocklist Manager — Status
+# ─────────────────────────────
+# Active set:    blocklist (27,314 entries)
+# Last updated:  2026-03-02 20:00:05 UTC
+# Lists enabled: 5/5
+# iptables rule: ACTIVE (INPUT chain, position 1)
+# Blocked today: 847 connections
 ```
 
-### Workflow 4: Check Status
+### Workflow 3: Whitelist an IP
 
-**Use case:** See current blocklist stats
-
-```bash
-sudo bash scripts/run.sh --status
-
-# Output:
-# Blocklist 'ip-blocklist' active
-# Total IPs blocked: 5,980
-# Last updated: 2026-03-01 20:00:05
-# Feeds: spamhaus-drop, abusech-feodo, emergingthreats
-# Blocked today: 142 connection attempts
-```
-
-### Workflow 5: Whitelist IPs
-
-**Use case:** Exclude specific IPs or ranges from blocking
+**Use case:** Exclude a legitimate IP that appears on a blocklist
 
 ```bash
-# Add to whitelist
-bash scripts/run.sh --whitelist-add 203.0.113.0/24
+# Add to whitelist (persists across updates)
+sudo bash scripts/blocklist.sh whitelist add 203.0.113.50
 
 # Remove from whitelist
-bash scripts/run.sh --whitelist-remove 203.0.113.0/24
+sudo bash scripts/blocklist.sh whitelist remove 203.0.113.50
 
-# View whitelist
-bash scripts/run.sh --whitelist-show
+# Show whitelist
+sudo bash scripts/blocklist.sh whitelist list
 ```
 
-### Workflow 6: Custom Feed
-
-**Use case:** Add your own blocklist URL
+### Workflow 4: Check if IP is Blocked
 
 ```bash
-# Add custom feed
-echo "https://example.com/my-blocklist.txt" >> scripts/custom-feeds.txt
+sudo bash scripts/blocklist.sh check 185.220.101.1
 
-# Re-apply
-sudo bash scripts/run.sh --apply
+# Output:
+# ⛔ 185.220.101.1 is BLOCKED
+# Found in: firehol_level1, blocklist_de
+# Reason: Known Tor exit node / brute-force attacker
+```
+
+### Workflow 5: Enable Logging
+
+```bash
+# Log blocked connections (adds LOG rule before DROP)
+sudo bash scripts/blocklist.sh logging on
+
+# View blocked traffic
+sudo bash scripts/blocklist.sh log --tail 50
+
+# Output:
+# Mar 02 20:15:33 BLOCKLIST_DROP: IN=eth0 SRC=185.220.101.1 DST=10.0.0.5 PROTO=TCP DPT=22
+# Mar 02 20:15:34 BLOCKLIST_DROP: IN=eth0 SRC=45.33.32.156 DST=10.0.0.5 PROTO=TCP DPT=443
+```
+
+### Workflow 6: Schedule Auto-Updates
+
+```bash
+# Install cron job (updates every 6 hours)
+sudo bash scripts/blocklist.sh cron install
+
+# Custom interval
+sudo bash scripts/blocklist.sh cron install --interval 12h
+
+# Remove cron job
+sudo bash scripts/blocklist.sh cron remove
 ```
 
 ## Configuration
 
-### Config File (scripts/config.sh)
+### Config File
 
 ```bash
-# ============================================================
-# IP Blocklist Manager Configuration
-# ============================================================
+# Copy default config
+sudo cp scripts/blocklist.conf /etc/blocklist-manager.conf
 
-# --- Feeds (enable/disable) ---
-FEED_SPAMHAUS_DROP=true        # Spamhaus Don't Route Or Peer
-FEED_SPAMHAUS_EDROP=true       # Extended DROP
-FEED_ABUSECH_FEODO=true        # Feodo Tracker (banking trojans)
-FEED_ABUSECH_SSLBL=true        # SSL Blacklist
-FEED_EMERGINGTHREATS=true      # Emerging Threats compromised IPs
-FEED_BLOCKLIST_DE=true          # blocklist.de (fail2ban aggregated)
-FEED_CINSSCORE=false            # CI Army (large list, ~15k IPs)
-FEED_DSHIELD=true               # DShield top attackers
-
-# --- ipset settings ---
-IPSET_NAME="ip-blocklist"       # Name of the ipset
-IPSET_MAXELEM=131072            # Max entries (increase for large lists)
-IPSET_TIMEOUT=0                 # 0 = no expiry
-
-# --- Paths ---
-DATA_DIR="/var/lib/ip-blocklist"
-LOG_FILE="/var/log/ip-blocklist.log"
-WHITELIST_FILE="scripts/whitelist.txt"
-CUSTOM_FEEDS_FILE="scripts/custom-feeds.txt"
-
-# --- Cron ---
-CRON_SCHEDULE="0 */6 * * *"    # Every 6 hours
-
-# --- Logging ---
-LOG_BLOCKED=true                # Log blocked connections via iptables LOG
-LOG_PREFIX="[BLOCKLIST] "       # Prefix for log entries
+# Edit to customize
+sudo nano /etc/blocklist-manager.conf
 ```
 
-### Whitelist File (scripts/whitelist.txt)
+### Config Options (`/etc/blocklist-manager.conf`)
 
-```
-# IPs/CIDRs to never block (one per line)
-# Your own server IPs
-10.0.0.0/8
-172.16.0.0/12
-192.168.0.0/16
-# Add your public IPs here:
-# 203.0.113.50
+```bash
+# ── Blocklist Sources ──
+# Uncomment/comment to enable/disable lists
+LISTS=(
+  "firehol_level1|https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset"
+  "spamhaus_drop|https://www.spamhaus.org/drop/drop.txt"
+  "spamhaus_edrop|https://www.spamhaus.org/drop/edrop.txt"
+  "blocklist_de|https://lists.blocklist.de/lists/all.txt"
+  "emerging_threats|https://rules.emergingthreats.net/fwrules/emerging-Block-IPs.txt"
+  "dshield_top20|https://www.dshield.org/block.txt"
+  "abuse_ch_feodo|https://feodotracker.abuse.ch/downloads/ipblocklist.txt"
+  # "cinsscore|https://cinsscore.com/list/ci-badguys.txt"          # Optional: CI Army
+  # "bruteforce|https://danger.rulez.sk/projects/bruteforceblocker/blist.php"  # Optional
+)
+
+# ── ipset Configuration ──
+IPSET_NAME="blocklist"
+IPSET_MAXELEM=200000          # Max IPs in set
+IPSET_TIMEOUT=0               # 0 = permanent until next update
+
+# ── iptables Configuration ──
+CHAIN="INPUT"                  # Chain to add DROP rule
+POSITION=1                     # Position in chain (1 = first rule)
+LOG_PREFIX="BLOCKLIST_DROP: "  # Prefix for logged drops
+ENABLE_LOGGING=false           # Set true to log before dropping
+
+# ── Whitelist ──
+WHITELIST_FILE="/etc/blocklist-whitelist.txt"
+
+# ── Paths ──
+DATA_DIR="/var/lib/blocklist-manager"
+LOG_FILE="/var/log/blocklist-manager.log"
+
+# ── Alerts (optional) ──
+# TELEGRAM_BOT_TOKEN=""
+# TELEGRAM_CHAT_ID=""
+# ALERT_THRESHOLD=1000          # Alert if >N blocks in 1 hour
 ```
 
 ## Advanced Usage
 
-### Run as systemd Timer (Alternative to Cron)
+### Use with UFW
 
 ```bash
-sudo bash scripts/run.sh --install-systemd
+# If using UFW instead of raw iptables:
+sudo bash scripts/blocklist.sh update --backend ufw
 
-# Creates:
-# /etc/systemd/system/ip-blocklist.service
-# /etc/systemd/system/ip-blocklist.timer
+# This creates UFW rules from the blocklist
+# Note: UFW is slower with large lists — ipset+iptables recommended
+```
+
+### Use with nftables
+
+```bash
+# For systems using nftables:
+sudo bash scripts/blocklist.sh update --backend nftables
 ```
 
 ### Export Blocked IPs
 
 ```bash
 # Export current blocklist to file
-sudo bash scripts/run.sh --export > blocked-ips.txt
+sudo bash scripts/blocklist.sh export > blocked-ips.txt
 
-# Export with feed source annotations
-sudo bash scripts/run.sh --export --annotated > blocked-ips-annotated.txt
+# Export with source attribution
+sudo bash scripts/blocklist.sh export --detailed > blocked-ips-detailed.csv
 ```
 
-### View Block Log
+### Statistics
 
 ```bash
-# Last 50 blocked connections
-sudo bash scripts/run.sh --log 50
+# Show blocking statistics
+sudo bash scripts/blocklist.sh stats
 
 # Output:
-# 2026-03-01 20:15:23 BLOCKED 185.220.101.34 → :443 (Spamhaus DROP)
-# 2026-03-01 20:15:45 BLOCKED 45.148.10.22 → :22 (blocklist.de)
-```
-
-### Uninstall / Remove Rules
-
-```bash
-# Remove all rules and ipset
-sudo bash scripts/run.sh --remove
-
-# Remove cron job too
-sudo bash scripts/run.sh --remove --remove-cron
+# Blocklist Statistics (last 24h)
+# ────────────────────────────────
+# Total blocked:     2,847 connections
+# Top source IPs:
+#   185.220.101.1    — 342 attempts (Tor exit, SSH brute-force)
+#   45.33.32.156     — 218 attempts (Port scanner)
+#   91.240.118.172   — 156 attempts (Spam relay)
+# Top target ports:
+#   22 (SSH)         — 1,203 (42%)
+#   443 (HTTPS)      — 612 (21%)
+#   80 (HTTP)        — 498 (17%)
+# Lists breakdown:
+#   firehol_level1   — 2,847 IPs (matched 1,847 blocks)
+#   blocklist_de     — 18,432 IPs (matched 642 blocks)
 ```
 
 ## Troubleshooting
 
 ### Issue: "ipset: command not found"
 
-**Fix:**
 ```bash
 sudo apt-get install ipset    # Debian/Ubuntu
 sudo yum install ipset        # RHEL/CentOS
@@ -241,41 +255,57 @@ sudo yum install ipset        # RHEL/CentOS
 
 ### Issue: "iptables: Permission denied"
 
-**Fix:** Run with sudo:
+Run with sudo: `sudo bash scripts/blocklist.sh update`
+
+### Issue: ipset set full (maxelem reached)
+
+Edit config: increase `IPSET_MAXELEM` to 500000, then re-run update.
+
+### Issue: Legitimate traffic blocked
+
 ```bash
-sudo bash scripts/run.sh --apply
-```
+# Check if IP is in blocklist
+sudo bash scripts/blocklist.sh check <ip>
 
-### Issue: Legitimate traffic being blocked
+# Add to whitelist
+sudo bash scripts/blocklist.sh whitelist add <ip>
 
-**Fix:** Add the IP to whitelist:
-```bash
-bash scripts/run.sh --whitelist-add <IP>
-sudo bash scripts/run.sh --apply  # Re-apply to refresh
-```
-
-### Issue: ipset "too many elements"
-
-**Fix:** Increase max elements in config:
-```bash
-# In scripts/config.sh
-IPSET_MAXELEM=262144  # Double the default
+# Force update to apply whitelist
+sudo bash scripts/blocklist.sh update
 ```
 
 ### Issue: Rules don't survive reboot
 
-**Fix:** Use persist flag:
 ```bash
-sudo bash scripts/run.sh --apply --persist
-# This saves ipset and iptables rules for reboot
+# Install persistence (saves/restores ipset + iptables on boot)
+sudo bash scripts/blocklist.sh persist install
 ```
+
+## Blocklist Sources
+
+| List | Focus | Size | Update Freq |
+|------|-------|------|-------------|
+| FireHOL Level 1 | Worst-of-the-worst attackers | ~3K IPs | 4x daily |
+| Spamhaus DROP | Hijacked IP ranges | ~1K CIDRs | Daily |
+| Spamhaus EDROP | Extended DROP | ~200 CIDRs | Daily |
+| Blocklist.de | Reported attackers (SSH, FTP, mail) | ~18K IPs | Hourly |
+| Emerging Threats | Active threat IPs | ~4K IPs | 4x daily |
+| DShield Top 20 | Top attacking subnets | ~600 IPs | Daily |
+| Abuse.ch Feodo | Banking trojan C2 servers | ~300 IPs | 4x daily |
+
+## Key Principles
+
+1. **ipset for performance** — Hash-based lookups, O(1) per packet vs O(n) for iptables rules
+2. **Whitelist first** — Always check whitelist before blocking
+3. **Atomic updates** — Build new set, swap in — zero downtime
+4. **Log sparingly** — Logging every drop is expensive; enable only when debugging
+5. **Persist across reboot** — Use ipset save/restore + iptables-persistent
 
 ## Dependencies
 
 - `bash` (4.0+)
-- `curl` (downloading feeds)
+- `curl` (downloading lists)
 - `ipset` (efficient IP set management)
-- `iptables` (firewall rules)
-- `jq` (optional, for JSON feeds)
-- Optional: `systemd` (for timer-based updates)
-- **Requires root/sudo** for firewall operations
+- `iptables` or `nftables` (firewall rules)
+- `grep`, `sed`, `sort` (text processing)
+- Optional: `jq` (for JSON stats export)

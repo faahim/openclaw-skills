@@ -5,57 +5,70 @@
 - **Name:** ip-blocklist-manager
 - **Display Name:** IP Blocklist Manager
 - **Categories:** [security, automation]
-- **Icon:** 🛡️
+- **Price:** $15
 - **Dependencies:** [bash, curl, ipset, iptables]
 
 ## Tagline
 
-Block malicious IPs automatically — threat intel feeds to iptables in one command
+Block thousands of malicious IPs automatically — threat intel blocklists for Linux firewalls
 
 ## Description
 
-Your server gets hit by bots, scanners, and known attackers 24/7. Manually maintaining blocklists is tedious and always out of date. You need automated, always-current protection.
+Every server gets hammered by botnets, port scanners, brute-forcers, and spammers. Most of these attacks come from known-bad IPs that are already catalogued by threat intelligence feeds. Why let them even reach your services?
 
-IP Blocklist Manager downloads threat intelligence feeds from trusted sources (Spamhaus DROP, abuse.ch, Emerging Threats, DShield, blocklist.de), deduplicates them, and loads them into Linux ipset/iptables rules. One command blocks thousands of known-malicious IPs at the kernel level. Schedule auto-updates every 6 hours and forget about it.
+IP Blocklist Manager downloads curated threat intelligence feeds (FireHOL, Spamhaus, Blocklist.de, Emerging Threats, DShield, Abuse.ch), deduplicates them, loads 25,000+ malicious IPs into Linux ipset for O(1) packet filtering, and keeps them updated automatically. One command to set up, zero ongoing maintenance.
 
 **What it does:**
-- 🛡️ Block 5,000-50,000+ malicious IPs from 8 threat intelligence feeds
-- ⏱️ Auto-update every 6 hours via cron or systemd timer
-- 📋 Whitelist your own IPs to prevent accidental blocking
-- 📊 Track blocked connections and view stats
-- 🔧 Persist rules across reboots
-- ➕ Add custom blocklist feeds
-- 🗑️ Clean uninstall — remove everything with one command
+- 🛡️ Block 25,000+ known-malicious IPs from 7 curated threat feeds
+- ⚡ ipset hash tables — O(1) lookup per packet, zero performance impact
+- 🔄 Auto-update via cron (every 6h by default)
+- 📋 Whitelist management — never accidentally block legitimate IPs
+- 📊 Statistics — see what's being blocked and from where
+- 🔔 Optional Telegram alerts on updates
+- 💾 Persist across reboots with systemd
+- 🧹 Clean uninstall — one command removes everything
 
-Perfect for anyone running a VPS, home server, or production infrastructure who wants automated IP-level threat protection without external services or subscriptions.
+Perfect for VPS operators, self-hosters, sysadmins, and anyone running internet-facing services who wants automated protection from known threats.
 
 ## Quick Start Preview
 
 ```bash
-# Block malicious IPs from 8 threat feeds
-sudo bash scripts/run.sh --apply
+# Download blocklists and apply
+sudo bash scripts/blocklist.sh update
 
-# [2026-03-01 20:00:00] ✓ spamhaus-drop: 842 IPs
-# [2026-03-01 20:00:02] ✓ abusech-feodo: 1,247 IPs
-# [2026-03-01 20:00:04] ✅ Loaded 5,980 IPs into ipset 'ip-blocklist'
+# Check status
+sudo bash scripts/blocklist.sh status
+
+# Auto-update every 6 hours
+sudo bash scripts/blocklist.sh cron install
 ```
 
 ## Core Capabilities
 
-1. Multi-feed aggregation — 8 trusted threat intelligence sources out of the box
-2. ipset + iptables — kernel-level blocking, zero performance impact
-3. Auto-deduplication — no duplicate rules, clean blocklist
-4. Whitelist support — never accidentally block your own IPs
-5. Dry run mode — preview what gets blocked before applying
-6. Cron & systemd — schedule auto-updates your way
-7. Reboot persistence — rules survive restarts
-8. Custom feeds — add your own blocklist URLs
-9. Block logging — see what's getting caught
-10. Clean uninstall — remove everything in one command
+1. Multi-source blocklists — 7 curated threat intelligence feeds included
+2. ipset performance — Hash-based O(1) lookups, handles 200K+ IPs effortlessly
+3. Atomic updates — Zero-downtime swap, never unprotected during refresh
+4. Whitelist management — Persistent whitelist survives updates
+5. IP lookup — Check if any IP is blocked and which lists flagged it
+6. Traffic logging — Optional kernel-level logging of blocked connections
+7. Cron scheduling — Auto-update every 1/6/12/24 hours
+8. Reboot persistence — systemd service restores rules on boot
+9. Telegram alerts — Get notified on blocklist updates
+10. Clean uninstall — Remove all rules, sets, and cron jobs in one command
 
 ## Dependencies
-- `bash` (4.0+), `curl`, `ipset`, `iptables`
-- Requires root/sudo for firewall operations
+- `bash` (4.0+)
+- `curl`
+- `ipset`
+- `iptables`
 
 ## Installation Time
-**5 minutes** — install ipset, configure feeds, run
+**5 minutes** — install ipset, run update, install cron
+
+## Pricing Justification
+
+**Why $15:**
+- Comparable to SaaS: CrowdSec free tier, Fail2ban free but reactive-only
+- Our advantage: Proactive blocking (block BEFORE attack), no signup, no external services
+- Complexity: Medium (ipset, iptables, cron, systemd, multiple feed parsers)
+- Value: Blocks thousands of attacks/day automatically
