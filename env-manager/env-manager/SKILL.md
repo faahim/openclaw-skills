@@ -1,25 +1,26 @@
 ---
 name: env-manager
 description: >-
-  Manage .env files across projects — encrypt secrets, diff environments, generate from templates, sync between dev/staging/prod.
+  Manage .env files across projects — encrypt secrets, sync between environments,
+  validate required vars, diff changes, and prevent accidental commits.
 categories: [dev-tools, security]
-dependencies: [bash, age, diff]
+dependencies: [bash, age, git]
 ---
 
 # Environment Manager
 
 ## What This Does
 
-Manages `.env` files across your projects with encryption, diffing, templating, and syncing. Encrypt secrets at rest with `age`, compare dev vs prod configs, generate `.env` from templates, and catch missing variables before deployment.
+Manages `.env` files across your projects: encrypt secrets with `age`, sync between environments (dev/staging/prod), validate required variables, diff configs, and set up git hooks to prevent accidental `.env` commits.
 
-**Example:** "Encrypt my production .env, diff it against staging, and find missing variables."
+**Example:** "Encrypt all .env files in a project, sync dev → staging with overrides, validate prod has all required vars before deploy."
 
 ## Quick Start (5 minutes)
 
 ### 1. Install Dependencies
 
 ```bash
-# Install age for encryption (modern, simple alternative to GPG)
+# Install age (modern encryption tool)
 # Ubuntu/Debian
 sudo apt-get install -y age
 
@@ -27,172 +28,193 @@ sudo apt-get install -y age
 brew install age
 
 # Or download from https://github.com/FiloSottile/age/releases
+which age || echo "❌ age not installed"
 
-# Verify
-which age diff && echo "Ready!" || echo "Install age and ensure diff is available"
+# Generate encryption key (one-time)
+mkdir -p ~/.config/env-manager
+if [ ! -f ~/.config/env-manager/key.txt ]; then
+  age-keygen -o ~/.config/env-manager/key.txt 2>&1 | head -1
+  chmod 600 ~/.config/env-manager/key.txt
+  echo "✅ Encryption key generated"
+else
+  echo "✅ Key already exists"
+fi
 ```
 
-### 2. Initialize
+### 2. Initialize a Project
 
 ```bash
-# Generate an encryption key (first time only)
-bash scripts/env-manager.sh init
+bash scripts/env-manager.sh init /path/to/project
 
-# Output:
-# ✅ Age key generated at ~/.config/env-manager/key.txt
-# ✅ Config created at ~/.config/env-manager/config.yaml
-# ⚠️  Back up ~/.config/env-manager/key.txt — losing it means losing access to encrypted .env files!
+# Creates:
+# .env.example (template with empty values)
+# .env.schema (validation rules)
+# .gitignore entry for .env files
+# pre-commit hook to block .env commits
 ```
 
-### 3. Encrypt Your First .env
+### 3. Encrypt Your .env
 
 ```bash
-# Encrypt a .env file (creates .env.age alongside it)
-bash scripts/env-manager.sh encrypt .env
+bash scripts/env-manager.sh encrypt /path/to/project/.env
 
 # Output:
-# 🔐 Encrypted .env → .env.age (23 variables, 1.2KB)
-# 💡 Add .env to .gitignore, commit .env.age instead
+# ✅ Encrypted → /path/to/project/.env.age
+# Safe to commit .env.age to git
 ```
 
 ## Core Workflows
 
-### Workflow 1: Encrypt/Decrypt .env Files
+### Workflow 1: Encrypt/Decrypt Secrets
 
-**Use case:** Store secrets safely in git
+**Use case:** Store encrypted .env in git, decrypt locally
 
 ```bash
 # Encrypt
 bash scripts/env-manager.sh encrypt .env
-# → Creates .env.age (encrypted)
+# → .env.age (commit this)
 
 # Decrypt
 bash scripts/env-manager.sh decrypt .env.age
-# → Creates .env (plaintext)
+# → .env (gitignored)
 
-# Encrypt with custom output
-bash scripts/env-manager.sh encrypt .env -o secrets/production.env.age
+# Encrypt all .env files in project
+bash scripts/env-manager.sh encrypt-all /path/to/project
 ```
 
-### Workflow 2: Diff Environments
+### Workflow 2: Sync Between Environments
 
-**Use case:** Compare dev vs prod, find missing vars
+**Use case:** Copy dev config to staging with overrides
 
 ```bash
-# Compare two .env files
+# Create env-specific files
+# .env.dev, .env.staging, .env.prod
+
+# Sync dev → staging (keeps staging overrides)
+bash scripts/env-manager.sh sync .env.dev .env.staging
+
+# Output:
+# 🔄 Syncing .env.dev → .env.staging
+# + Added: NEW_API_KEY (from dev)
+# = Kept: DATABASE_URL (staging override)
+# - Missing in dev: STAGING_ONLY_VAR (kept)
+# ✅ Synced 15 vars (3 added, 10 kept, 2 staging-only)
+```
+
+### Workflow 3: Validate Before Deploy
+
+**Use case:** Ensure prod has all required vars
+
+```bash
+# Define schema
+cat > .env.schema << 'EOF'
+DATABASE_URL=required
+API_KEY=required
+REDIS_URL=required
+DEBUG=optional|default=false
+LOG_LEVEL=optional|default=info|values=debug,info,warn,error
+PORT=optional|default=3000|type=number
+EOF
+
+# Validate
+bash scripts/env-manager.sh validate .env.prod --schema .env.schema
+
+# Output:
+# ✅ DATABASE_URL = set
+# ✅ API_KEY = set
+# ❌ REDIS_URL = MISSING (required)
+# ✅ DEBUG = false (default)
+# ✅ LOG_LEVEL = info (valid)
+# ✅ PORT = 3000 (valid number)
+#
+# ❌ Validation FAILED: 1 required variable missing
+```
+
+### Workflow 4: Diff Environments
+
+**Use case:** Compare dev vs prod configs
+
+```bash
 bash scripts/env-manager.sh diff .env.dev .env.prod
 
 # Output:
 # 📊 Environment Diff: .env.dev ↔ .env.prod
-# ────────────────────────────────────────
-# ONLY IN .env.dev:
-#   DEBUG=true
-#   MOCK_PAYMENTS=1
+# ─────────────────────────────────────────
+# Variable          │ dev              │ prod
+# ─────────────────────────────────────────
+# DATABASE_URL      │ localhost:5432   │ prod-db.aws:5432
+# DEBUG             │ true             │ false
+# API_KEY           │ dev-key-xxx      │ *** (masked)
+# NEW_FEATURE_FLAG  │ true             │ (missing)
+# CDN_URL           │ (missing)        │ cdn.example.com
+# ─────────────────────────────────────────
+# Summary: 2 different, 1 only-in-dev, 1 only-in-prod
+```
+
+### Workflow 5: Generate .env.example
+
+**Use case:** Create a safe template for team onboarding
+
+```bash
+bash scripts/env-manager.sh example .env
+
+# Output → .env.example:
+# DATABASE_URL=
+# API_KEY=
+# REDIS_URL=
+# DEBUG=false
+# LOG_LEVEL=info
+# PORT=3000
 #
-# ONLY IN .env.prod:
-#   SENTRY_DSN=https://...
-#   REDIS_URL=redis://...
+# ✅ Generated .env.example (6 vars, secrets stripped, defaults kept)
+```
+
+### Workflow 6: Git Protection
+
+**Use case:** Prevent accidental .env commits
+
+```bash
+bash scripts/env-manager.sh protect /path/to/project
+
+# Installs:
+# 1. .gitignore rules for .env, .env.local, .env.*.local
+# 2. pre-commit hook that blocks .env file commits
+# 3. Scans git history for leaked .env files
 #
-# DIFFERENT VALUES:
-#   DATABASE_URL: sqlite:///dev.db → postgres://prod:5432/app
-#   API_URL: http://localhost:3000 → https://api.example.com
-#
-# SAME IN BOTH: 15 variables
-
-# Compare encrypted files (auto-decrypts)
-bash scripts/env-manager.sh diff .env.dev.age .env.prod.age
-```
-
-### Workflow 3: Validate Against Template
-
-**Use case:** Ensure all required vars are set before deploy
-
-```bash
-# Create a template (.env.template)
-bash scripts/env-manager.sh template .env
-# → Creates .env.template with keys only (no values)
-
-# Validate .env against template
-bash scripts/env-manager.sh validate .env --template .env.template
-
 # Output:
-# ✅ All 23 required variables present
-# ⚠️  Missing optional variables: SENTRY_DSN, NEW_RELIC_KEY
-# ❌ Missing required variables: STRIPE_SECRET_KEY
-```
-
-### Workflow 4: Generate .env from Template
-
-**Use case:** Onboard new developers
-
-```bash
-# Generate .env with placeholder values
-bash scripts/env-manager.sh generate .env.template -o .env.local
-
-# Output:
-# 📝 Generated .env.local from template
-# ⚠️  Fill in these values:
-#   DATABASE_URL=<required>
-#   API_KEY=<required>
-#   DEBUG=true (default)
-```
-
-### Workflow 5: List & Search Variables
-
-**Use case:** Quick lookup across environments
-
-```bash
-# List all variables in a .env
-bash scripts/env-manager.sh list .env
-
-# Search for a variable across multiple files
-bash scripts/env-manager.sh search DATABASE_URL .env.*
-
-# Output:
-# 🔍 DATABASE_URL found in:
-#   .env.dev     = sqlite:///dev.db
-#   .env.staging = postgres://staging:5432/app
-#   .env.prod    = postgres://prod:5432/app
-```
-
-### Workflow 6: Sync Variables
-
-**Use case:** Copy missing vars from one env to another
-
-```bash
-# Sync missing vars from template to .env (interactive)
-bash scripts/env-manager.sh sync .env.template .env
-
-# Output:
-# 🔄 Syncing .env.template → .env
-# New variables to add:
-#   REDIS_URL= (no default)
-#   CACHE_TTL=3600 (default)
-# Add these? [y/N]: y
-# ✅ Added 2 variables to .env
+# ✅ .gitignore updated
+# ✅ pre-commit hook installed
+# ⚠️ Found .env in git history (commit abc123) — run `git filter-branch` to remove
 ```
 
 ## Configuration
 
-### Config File (~/.config/env-manager/config.yaml)
+### Key File Location
 
-```yaml
-# Default encryption key location
-key_path: ~/.config/env-manager/key.txt
+```bash
+# Default key location
+~/.config/env-manager/key.txt
 
-# Default template file name
-template_name: .env.template
+# Custom key via environment variable
+export ENV_MANAGER_KEY="/path/to/custom/key.txt"
 
-# Variables to always redact in diffs/logs
-redact_patterns:
-  - "*_SECRET*"
-  - "*_KEY*"
-  - "*_PASSWORD*"
-  - "*_TOKEN*"
+# Team key (shared via secure channel)
+export ENV_MANAGER_TEAM_KEY="/path/to/team/key.txt"
+```
 
-# Auto-backup before overwriting
-backup: true
-backup_dir: ~/.config/env-manager/backups/
+### Schema Format
+
+```bash
+# .env.schema — one rule per line
+# Format: VAR_NAME=required|optional [|default=X] [|type=string|number|bool|url] [|values=a,b,c]
+
+DATABASE_URL=required|type=url
+API_KEY=required
+SECRET_KEY=required
+DEBUG=optional|default=false|type=bool
+PORT=optional|default=3000|type=number
+LOG_LEVEL=optional|default=info|values=debug,info,warn,error
+WORKERS=optional|default=4|type=number
 ```
 
 ## Advanced Usage
@@ -200,76 +222,86 @@ backup_dir: ~/.config/env-manager/backups/
 ### Rotate Encryption Key
 
 ```bash
-# Generate new key and re-encrypt all .age files in a directory
-bash scripts/env-manager.sh rotate-key ./secrets/
+# Generate new key
+age-keygen -o ~/.config/env-manager/key-new.txt
 
-# Output:
-# 🔄 Rotating encryption key...
-# ✅ New key generated
-# 🔐 Re-encrypted 5 files
-# ⚠️  Old key backed up to ~/.config/env-manager/key.txt.bak
+# Re-encrypt all files
+bash scripts/env-manager.sh rotate /path/to/project \
+  --old-key ~/.config/env-manager/key.txt \
+  --new-key ~/.config/env-manager/key-new.txt
+
+# Replace old key
+mv ~/.config/env-manager/key-new.txt ~/.config/env-manager/key.txt
 ```
 
 ### Bulk Operations
 
 ```bash
-# Encrypt all .env files in a project
-find . -name ".env*" ! -name "*.age" ! -name "*.template" | \
-  xargs -I {} bash scripts/env-manager.sh encrypt {}
+# Encrypt all .env files in all projects
+find ~/projects -name ".env" -not -path "*/node_modules/*" | while read f; do
+  bash scripts/env-manager.sh encrypt "$f"
+done
 
-# Validate all projects against their templates
-for dir in ~/projects/*/; do
-  if [ -f "$dir/.env.template" ] && [ -f "$dir/.env" ]; then
-    echo "=== $(basename $dir) ==="
-    bash scripts/env-manager.sh validate "$dir/.env" --template "$dir/.env.template"
-  fi
+# Validate all projects
+find ~/projects -name ".env.schema" | while read s; do
+  dir=$(dirname "$s")
+  echo "=== $dir ==="
+  bash scripts/env-manager.sh validate "$dir/.env" --schema "$s"
 done
 ```
 
 ### CI/CD Integration
 
 ```bash
-# In your CI pipeline — decrypt and validate before deploy
-bash scripts/env-manager.sh decrypt .env.prod.age -o .env
-bash scripts/env-manager.sh validate .env --template .env.template --strict
-# --strict exits with code 1 if any required var is missing
+# In GitHub Actions / CI pipeline:
+# 1. Decrypt .env from .env.age
+bash scripts/env-manager.sh decrypt .env.age --key "$ENV_DECRYPTION_KEY"
+
+# 2. Validate against schema
+bash scripts/env-manager.sh validate .env --schema .env.schema --strict
+
+# 3. Export to environment
+set -a; source .env; set +a
 ```
 
 ## Troubleshooting
 
 ### Issue: "age: command not found"
 
+**Fix:**
 ```bash
 # Install age
-# Ubuntu/Debian
-sudo apt-get install -y age
-# macOS
-brew install age
+# Ubuntu: sudo apt-get install age
+# macOS: brew install age
 # Manual: https://github.com/FiloSottile/age/releases
 ```
 
 ### Issue: "permission denied" on key file
 
+**Fix:**
 ```bash
 chmod 600 ~/.config/env-manager/key.txt
 ```
 
-### Issue: Can't decrypt (lost key)
+### Issue: Encrypted file won't decrypt
 
-If you lost `~/.config/env-manager/key.txt`, encrypted files are unrecoverable. Always back up your key.
+**Check:**
+1. Correct key: `age-keygen -y ~/.config/env-manager/key.txt` (shows public key)
+2. File not corrupted: `file .env.age` should show "data"
+3. Key matches: encrypted with same public key
 
+### Issue: Pre-commit hook not triggering
+
+**Fix:**
 ```bash
-# Check if key exists
-ls -la ~/.config/env-manager/key.txt
+chmod +x .git/hooks/pre-commit
+# Verify: git commit should trigger the hook
 ```
-
-### Issue: Diff shows binary data
-
-Make sure your `.env` files are UTF-8 text, not binary. The encrypted `.age` files will be auto-decrypted before diffing.
 
 ## Dependencies
 
 - `bash` (4.0+)
 - `age` (encryption — https://github.com/FiloSottile/age)
-- `diff` (comparison — pre-installed on Linux/Mac)
-- `sort`, `grep`, `awk` (parsing — pre-installed)
+- `git` (for hooks and history scanning)
+- `diff` (standard unix tool)
+- `awk`/`sed` (standard unix tools)

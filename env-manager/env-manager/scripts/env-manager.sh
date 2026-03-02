@@ -1,14 +1,10 @@
 #!/bin/bash
-# env-manager.sh — Manage .env files with encryption, diffing, templating
-# Requires: age (https://github.com/FiloSottile/age), bash 4+
-
-set -uo pipefail
+# env-manager — Manage .env files: encrypt, decrypt, sync, validate, diff, protect
+set -euo pipefail
 
 VERSION="1.0.0"
-CONFIG_DIR="${HOME}/.config/env-manager"
-KEY_FILE="${CONFIG_DIR}/key.txt"
-CONFIG_FILE="${CONFIG_DIR}/config.yaml"
-BACKUP_DIR="${CONFIG_DIR}/backups"
+KEY_DIR="${ENV_MANAGER_KEY_DIR:-$HOME/.config/env-manager}"
+KEY_FILE="${ENV_MANAGER_KEY:-$KEY_DIR/key.txt}"
 
 # Colors
 RED='\033[0;31m'
@@ -17,622 +13,557 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-log_ok()   { echo -e "${GREEN}✅ $1${NC}"; }
-log_warn() { echo -e "${YELLOW}⚠️  $1${NC}"; }
-log_err()  { echo -e "${RED}❌ $1${NC}"; }
-log_info() { echo -e "${BLUE}📋 $1${NC}"; }
+log_ok()   { echo -e "${GREEN}✅ $*${NC}"; }
+log_warn() { echo -e "${YELLOW}⚠️  $*${NC}"; }
+log_err()  { echo -e "${RED}❌ $*${NC}"; }
+log_info() { echo -e "${BLUE}ℹ️  $*${NC}"; }
 
-usage() {
-  cat <<EOF
-env-manager v${VERSION} — Manage .env files
+# ─── HELPERS ────────────────────────────────────────────────
 
-Usage: env-manager.sh <command> [options]
-
-Commands:
-  init                        Initialize env-manager (generate key + config)
-  encrypt <file> [-o output]  Encrypt a .env file with age
-  decrypt <file> [-o output]  Decrypt a .env.age file
-  diff <file1> <file2>        Compare two .env files (supports .age)
-  template <file> [-o output] Generate a template (keys only, no values)
-  validate <file> --template <tmpl> [--strict]  Check for missing variables
-  generate <template> [-o output]  Create .env from template with placeholders
-  list <file>                 List all variables in a .env
-  search <var> <files...>     Search for a variable across .env files
-  sync <source> <target>      Add missing vars from source to target
-  rotate-key <dir>            Generate new key and re-encrypt all .age files
-
-Options:
-  -o, --output <file>   Output file path
-  --strict              Exit with code 1 on validation failure
-  -h, --help            Show this help
-  -v, --version         Show version
-EOF
-}
-
-# Parse .env file into sorted KEY=VALUE pairs (strips comments, empty lines)
-parse_env() {
-  local file="$1"
-  grep -v '^\s*#' "$file" | grep -v '^\s*$' | sort
-}
-
-# Extract just keys from a .env file
-parse_keys() {
-  local file="$1"
-  parse_env "$file" | cut -d'=' -f1
-}
-
-# Auto-decrypt .age files to temp, return path
-resolve_file() {
-  local file="$1"
-  if [[ "$file" == *.age ]]; then
-    local tmp
-    tmp=$(mktemp /tmp/env-manager.XXXXXX)
-    age --decrypt -i "$KEY_FILE" -o "$tmp" "$file" 2>/dev/null || {
-      log_err "Failed to decrypt $file"
-      rm -f "$tmp"
-      exit 1
-    }
-    echo "$tmp"
-    return 0
-  fi
-  echo "$file"
-}
-
-# Backup a file before overwriting
-backup_file() {
-  local file="$1"
-  if [ -f "$file" ]; then
-    mkdir -p "$BACKUP_DIR"
-    local ts
-    ts=$(date +%Y%m%d_%H%M%S)
-    cp "$file" "${BACKUP_DIR}/$(basename "$file").${ts}.bak"
+ensure_age() {
+  if ! command -v age &>/dev/null; then
+    log_err "age not installed. Install: sudo apt-get install age (or brew install age)"
+    exit 1
   fi
 }
+
+ensure_key() {
+  if [ ! -f "$KEY_FILE" ]; then
+    log_err "No encryption key found at $KEY_FILE"
+    echo "  Generate one: age-keygen -o $KEY_FILE"
+    exit 1
+  fi
+}
+
+get_public_key() {
+  age-keygen -y "$KEY_FILE" 2>/dev/null
+}
+
+parse_env_file() {
+  local file="$1"
+  # Output: KEY=VALUE lines, skipping comments and blanks
+  grep -v '^\s*#' "$file" 2>/dev/null | grep -v '^\s*$' | sort
+}
+
+get_env_keys() {
+  local file="$1"
+  parse_env_file "$file" | cut -d= -f1
+}
+
+get_env_value() {
+  local file="$1" key="$2"
+  grep "^${key}=" "$file" 2>/dev/null | head -1 | cut -d= -f2-
+}
+
+# ─── COMMANDS ───────────────────────────────────────────────
 
 cmd_init() {
-  mkdir -p "$CONFIG_DIR"
-  chmod 700 "$CONFIG_DIR"
-
-  if [ -f "$KEY_FILE" ]; then
-    log_warn "Key already exists at $KEY_FILE"
-    read -p "Overwrite? [y/N]: " confirm
-    [[ "$confirm" != "y" && "$confirm" != "Y" ]] && exit 0
-    backup_file "$KEY_FILE"
+  local project_dir="${1:-.}"
+  
+  echo "🔧 Initializing env-manager in $project_dir"
+  
+  # Create .env.example if .env exists
+  if [ -f "$project_dir/.env" ]; then
+    cmd_example "$project_dir/.env" "$project_dir/.env.example"
   fi
-
-  age-keygen -o "$KEY_FILE" 2>/dev/null
-  chmod 600 "$KEY_FILE"
-  log_ok "Age key generated at $KEY_FILE"
-
-  # Extract public key
-  local pubkey
-  pubkey=$(grep "public key:" "$KEY_FILE" | awk '{print $NF}')
-  echo "🔑 Public key: $pubkey"
-
-  if [ ! -f "$CONFIG_FILE" ]; then
-    cat > "$CONFIG_FILE" <<YAML
-# env-manager configuration
-key_path: ${KEY_FILE}
-template_name: .env.template
-redact_patterns:
-  - "*_SECRET*"
-  - "*_KEY*"
-  - "*_PASSWORD*"
-  - "*_TOKEN*"
-backup: true
-backup_dir: ${BACKUP_DIR}
-YAML
-    log_ok "Config created at $CONFIG_FILE"
+  
+  # Create schema template
+  if [ ! -f "$project_dir/.env.schema" ]; then
+    cat > "$project_dir/.env.schema" << 'SCHEMA'
+# .env.schema — Validation rules
+# Format: VAR_NAME=required|optional [|default=X] [|type=string|number|bool|url] [|values=a,b,c]
+#
+# Examples:
+# DATABASE_URL=required|type=url
+# DEBUG=optional|default=false|type=bool
+# LOG_LEVEL=optional|default=info|values=debug,info,warn,error
+SCHEMA
+    log_ok "Created .env.schema template"
   fi
-
-  log_warn "Back up $KEY_FILE — losing it means losing access to encrypted .env files!"
+  
+  # Update .gitignore
+  cmd_protect "$project_dir" --quiet
+  
+  log_ok "Project initialized in $project_dir"
 }
 
 cmd_encrypt() {
   local input="$1"
   local output="${2:-${input}.age}"
-
-  [ ! -f "$input" ] && { log_err "File not found: $input"; exit 1; }
-  [ ! -f "$KEY_FILE" ] && { log_err "No key found. Run: env-manager.sh init"; exit 1; }
-
+  
+  ensure_age
+  ensure_key
+  
+  if [ ! -f "$input" ]; then
+    log_err "File not found: $input"
+    exit 1
+  fi
+  
   local pubkey
-  pubkey=$(grep "public key:" "$KEY_FILE" | awk '{print $NF}')
-  local var_count
-  var_count=$(parse_keys "$input" | wc -l | tr -d ' ')
-
+  pubkey=$(get_public_key)
+  
   age -r "$pubkey" -o "$output" "$input"
-  local size
-  size=$(wc -c < "$output" | tr -d ' ')
-
-  log_ok "Encrypted $input → $output ($var_count variables, ${size}B)"
-  echo -e "${BLUE}💡 Add $(basename "$input") to .gitignore, commit $(basename "$output") instead${NC}"
+  log_ok "Encrypted → $output"
+  echo "  Safe to commit $output to git"
 }
 
 cmd_decrypt() {
   local input="$1"
   local output="${2:-${input%.age}}"
-
-  [ ! -f "$input" ] && { log_err "File not found: $input"; exit 1; }
-  [ ! -f "$KEY_FILE" ] && { log_err "No key found. Run: env-manager.sh init"; exit 1; }
-
-  if [ "$output" == "$input" ]; then
-    output="${input}.decrypted"
-  fi
-
-  backup_file "$output"
-  age --decrypt -i "$KEY_FILE" -o "$output" "$input"
-
-  local var_count
-  var_count=$(parse_keys "$output" | wc -l | tr -d ' ')
-  log_ok "Decrypted $input → $output ($var_count variables)"
-}
-
-cmd_diff() {
-  local file1="$1"
-  local file2="$2"
-  local tmpfiles=()
-
-  [ ! -f "$file1" ] && { log_err "File not found: $file1"; exit 1; }
-  [ ! -f "$file2" ] && { log_err "File not found: $file2"; exit 1; }
-
-  local resolved1 resolved2
-  resolved1=$(resolve_file "$file1")
-  resolved2=$(resolve_file "$file2")
-  [[ "$resolved1" != "$file1" ]] && tmpfiles+=("$resolved1")
-  [[ "$resolved2" != "$file2" ]] && tmpfiles+=("$resolved2")
-
-  echo -e "${BLUE}📊 Environment Diff: $file1 ↔ $file2${NC}"
-  echo "────────────────────────────────────────"
-
-  local keys1 keys2
-  keys1=$(parse_keys "$resolved1")
-  keys2=$(parse_keys "$resolved2")
-
-  # Only in file1
-  local only1
-  only1=$(comm -23 <(echo "$keys1") <(echo "$keys2"))
-  if [ -n "$only1" ]; then
-    echo -e "\n${YELLOW}ONLY IN $file1:${NC}"
-    while IFS= read -r key; do
-      local val
-      val=$(grep "^${key}=" "$resolved1" | head -1 | cut -d'=' -f2-)
-      echo "  ${key}=${val}"
-    done <<< "$only1"
-  fi
-
-  # Only in file2
-  local only2
-  only2=$(comm -13 <(echo "$keys1") <(echo "$keys2"))
-  if [ -n "$only2" ]; then
-    echo -e "\n${YELLOW}ONLY IN $file2:${NC}"
-    while IFS= read -r key; do
-      local val
-      val=$(grep "^${key}=" "$resolved2" | head -1 | cut -d'=' -f2-)
-      echo "  ${key}=${val}"
-    done <<< "$only2"
-  fi
-
-  # Different values
-  local common
-  common=$(comm -12 <(echo "$keys1") <(echo "$keys2"))
-  local diff_count=0
-  local same_count=0
-  local diff_output=""
-
-  while IFS= read -r key; do
-    [ -z "$key" ] && continue
-    local val1 val2
-    val1=$(grep "^${key}=" "$resolved1" | head -1 | cut -d'=' -f2-)
-    val2=$(grep "^${key}=" "$resolved2" | head -1 | cut -d'=' -f2-)
-    if [ "$val1" != "$val2" ]; then
-      diff_output+="  ${key}: ${val1} → ${val2}\n"
-      ((diff_count++))
-    else
-      ((same_count++))
-    fi
-  done <<< "$common"
-
-  if [ $diff_count -gt 0 ]; then
-    echo -e "\n${RED}DIFFERENT VALUES:${NC}"
-    echo -e "$diff_output"
-  fi
-
-  echo -e "\n${GREEN}SAME IN BOTH: $same_count variables${NC}"
-
-  # Cleanup temp files
-  for tmp in "${tmpfiles[@]}"; do
-    rm -f "$tmp"
+  local custom_key="${KEY_FILE}"
+  
+  # Check for --key flag
+  shift
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --key) custom_key="$2"; shift 2 ;;
+      *) output="$1"; shift ;;
+    esac
   done
-}
-
-cmd_template() {
-  local input="$1"
-  local output="${2:-${input}.template}"
-
-  [ ! -f "$input" ] && { log_err "File not found: $input"; exit 1; }
-
-  local resolved
-  resolved=$(resolve_file "$input")
-
-  {
-    echo "# Environment Template"
-    echo "# Generated from $(basename "$input") on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "# Fill in values and rename to .env"
-    echo ""
-    parse_env "$resolved" | while IFS='=' read -r key value; do
-      # Check if value looks like a secret
-      if echo "$key" | grep -qiE '(SECRET|KEY|PASSWORD|TOKEN|PRIVATE)'; then
-        echo "${key}=<required-secret>"
-      elif [ -z "$value" ]; then
-        echo "${key}=<required>"
-      else
-        echo "# Default: ${value}"
-        echo "${key}=${value}"
-      fi
-    done
-  } > "$output"
-
-  [[ "$resolved" != "$input" ]] && rm -f "$resolved"
-
-  local key_count
-  key_count=$(parse_keys "$input" | wc -l | tr -d ' ')
-  log_ok "Template created: $output ($key_count variables)"
-}
-
-cmd_validate() {
-  local input="$1"
-  local template="$2"
-  local strict="${3:-false}"
-
-  [ ! -f "$input" ] && { log_err "File not found: $input"; exit 1; }
-  [ ! -f "$template" ] && { log_err "Template not found: $template"; exit 1; }
-
-  local resolved_input resolved_template
-  resolved_input=$(resolve_file "$input")
-  resolved_template=$(resolve_file "$template")
-
-  local input_keys template_keys
-  input_keys=$(parse_keys "$resolved_input")
-  template_keys=$(parse_keys "$resolved_template")
-
-  local missing
-  missing=$(comm -13 <(echo "$input_keys") <(echo "$template_keys"))
-
-  local extra
-  extra=$(comm -23 <(echo "$input_keys") <(echo "$template_keys"))
-
-  local present
-  present=$(comm -12 <(echo "$input_keys") <(echo "$template_keys") | wc -l | tr -d ' ')
-
-  if [ -z "$missing" ]; then
-    log_ok "All $present required variables present in $input"
-  else
-    local missing_count
-    missing_count=$(echo "$missing" | wc -l | tr -d ' ')
-    log_err "Missing $missing_count variables in $input:"
-    echo "$missing" | while read -r key; do
-      echo "  - $key"
-    done
-  fi
-
-  if [ -n "$extra" ]; then
-    local extra_count
-    extra_count=$(echo "$extra" | wc -l | tr -d ' ')
-    log_info "$extra_count extra variables not in template (OK)"
-  fi
-
-  [[ "$resolved_input" != "$input" ]] && rm -f "$resolved_input"
-  [[ "$resolved_template" != "$template" ]] && rm -f "$resolved_template"
-
-  if [ -n "$missing" ] && [ "$strict" == "true" ]; then
+  
+  ensure_age
+  
+  if [ ! -f "$input" ]; then
+    log_err "File not found: $input"
     exit 1
   fi
+  
+  age -d -i "$custom_key" -o "$output" "$input"
+  log_ok "Decrypted → $output"
 }
 
-cmd_generate() {
-  local template="$1"
-  local output="${2:-.env.local}"
-
-  [ ! -f "$template" ] && { log_err "Template not found: $template"; exit 1; }
-
-  local resolved
-  resolved=$(resolve_file "$template")
-
-  backup_file "$output"
-
-  {
-    echo "# Generated from $(basename "$template") on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "# Fill in the <required> values"
-    echo ""
-    cat "$resolved"
-  } > "$output"
-
-  [[ "$resolved" != "$template" ]] && rm -f "$resolved"
-
-  log_ok "Generated $output from $(basename "$template")"
-  log_warn "Fill in values marked <required> or <required-secret>"
-}
-
-cmd_list() {
-  local input="$1"
-
-  [ ! -f "$input" ] && { log_err "File not found: $input"; exit 1; }
-
-  local resolved
-  resolved=$(resolve_file "$input")
-
-  echo -e "${BLUE}📋 Variables in $input:${NC}"
-  echo "────────────────────────────────────────"
-
+cmd_encrypt_all() {
+  local dir="${1:-.}"
   local count=0
-  parse_env "$resolved" | while IFS='=' read -r key value; do
-    # Redact sensitive values
-    if echo "$key" | grep -qiE '(SECRET|KEY|PASSWORD|TOKEN|PRIVATE|CREDENTIAL)'; then
-      echo "  ${key}=****"
-    else
-      echo "  ${key}=${value}"
-    fi
+  
+  ensure_age
+  ensure_key
+  
+  local pubkey
+  pubkey=$(get_public_key)
+  
+  while IFS= read -r -d '' envfile; do
+    local outfile="${envfile}.age"
+    age -r "$pubkey" -o "$outfile" "$envfile"
+    log_ok "Encrypted: $envfile → $outfile"
     ((count++))
-  done
-
-  local total
-  total=$(parse_keys "$resolved" | wc -l | tr -d ' ')
-  echo ""
-  echo "Total: $total variables"
-
-  [[ "$resolved" != "$input" ]] && rm -f "$resolved"
-}
-
-cmd_search() {
-  local var="$1"
-  shift
-  local files=("$@")
-
-  echo -e "${BLUE}🔍 Searching for: $var${NC}"
-  echo "────────────────────────────────────────"
-
-  local found=0
-  for file in "${files[@]}"; do
-    [ ! -f "$file" ] && continue
-    local resolved
-    resolved=$(resolve_file "$file")
-    local match
-    match=$(grep "^${var}=" "$resolved" 2>/dev/null | head -1)
-    if [ -n "$match" ]; then
-      local val
-      val=$(echo "$match" | cut -d'=' -f2-)
-      if echo "$var" | grep -qiE '(SECRET|KEY|PASSWORD|TOKEN|PRIVATE)'; then
-        echo "  $file = ****"
-      else
-        echo "  $file = $val"
-      fi
-      ((found++))
-    fi
-    [[ "$resolved" != "$file" ]] && rm -f "$resolved"
-  done
-
-  if [ $found -eq 0 ]; then
-    log_warn "$var not found in any file"
-  else
-    echo ""
-    echo "Found in $found file(s)"
-  fi
+  done < <(find "$dir" -name ".env" -not -path "*/node_modules/*" -not -path "*/.git/*" -print0)
+  
+  log_ok "Encrypted $count .env files"
 }
 
 cmd_sync() {
   local source="$1"
   local target="$2"
-
-  [ ! -f "$source" ] && { log_err "Source not found: $source"; exit 1; }
-  [ ! -f "$target" ] && { log_err "Target not found: $target"; exit 1; }
-
-  local resolved_source resolved_target
-  resolved_source=$(resolve_file "$source")
-  resolved_target=$(resolve_file "$target")
-
-  local source_keys target_keys
-  source_keys=$(parse_keys "$resolved_source")
-  target_keys=$(parse_keys "$resolved_target")
-
-  local missing
-  missing=$(comm -23 <(echo "$source_keys") <(echo "$target_keys"))
-
-  if [ -z "$missing" ]; then
-    log_ok "Target $target already has all variables from $source"
-    [[ "$resolved_source" != "$source" ]] && rm -f "$resolved_source"
-    [[ "$resolved_target" != "$target" ]] && rm -f "$resolved_target"
-    return
+  
+  if [ ! -f "$source" ]; then
+    log_err "Source not found: $source"
+    exit 1
   fi
-
-  local count
-  count=$(echo "$missing" | wc -l | tr -d ' ')
-  echo -e "${BLUE}🔄 Syncing $source → $target${NC}"
-  echo "New variables to add:"
-  while IFS= read -r key; do
-    local val
-    val=$(grep "^${key}=" "$resolved_source" | head -1 | cut -d'=' -f2-)
-    if [ -n "$val" ]; then
-      echo "  ${key}=${val} (default)"
-    else
-      echo "  ${key}= (no default)"
-    fi
-  done <<< "$missing"
-
-  echo ""
-  read -p "Add these $count variables? [y/N]: " confirm
-  if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-    backup_file "$target"
-    echo "" >> "$target"
-    echo "# Synced from $(basename "$source") on $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$target"
-    while IFS= read -r key; do
-      local line
-      line=$(grep "^${key}=" "$resolved_source" | head -1)
-      echo "$line" >> "$target"
-    done <<< "$missing"
-    log_ok "Added $count variables to $target"
+  
+  echo "🔄 Syncing $source → $target"
+  
+  local added=0 kept=0 target_only=0
+  local tmp_target
+  tmp_target=$(mktemp)
+  
+  # Start with target contents (if exists)
+  if [ -f "$target" ]; then
+    cp "$target" "$tmp_target"
   else
-    log_info "Cancelled"
+    touch "$tmp_target"
   fi
-
-  [[ "$resolved_source" != "$source" ]] && rm -f "$resolved_source"
-  [[ "$resolved_target" != "$target" ]] && rm -f "$resolved_target"
+  
+  # Add vars from source that aren't in target
+  while IFS= read -r line; do
+    local key
+    key=$(echo "$line" | cut -d= -f1)
+    if ! grep -q "^${key}=" "$tmp_target" 2>/dev/null; then
+      echo "$line" >> "$tmp_target"
+      echo -e "  ${GREEN}+ Added: $key${NC} (from source)"
+      ((added++))
+    else
+      echo -e "  ${BLUE}= Kept: $key${NC} (target override)"
+      ((kept++))
+    fi
+  done < <(parse_env_file "$source")
+  
+  # Count target-only vars
+  while IFS= read -r key; do
+    if ! grep -q "^${key}=" "$source" 2>/dev/null; then
+      echo -e "  ${YELLOW}- Target-only: $key${NC} (kept)"
+      ((target_only++))
+    fi
+  done < <(get_env_keys "$tmp_target")
+  
+  # Sort and write
+  sort "$tmp_target" > "$target"
+  rm "$tmp_target"
+  
+  local total=$((added + kept + target_only))
+  log_ok "Synced $total vars ($added added, $kept kept, $target_only target-only)"
 }
 
-cmd_rotate_key() {
-  local dir="$1"
-
-  [ ! -d "$dir" ] && { log_err "Directory not found: $dir"; exit 1; }
-  [ ! -f "$KEY_FILE" ] && { log_err "No key found. Run: env-manager.sh init"; exit 1; }
-
-  local age_files
-  age_files=$(find "$dir" -name "*.age" -type f)
-
-  if [ -z "$age_files" ]; then
-    log_warn "No .age files found in $dir"
-    return
+cmd_validate() {
+  local envfile="$1"
+  shift
+  local schema=""
+  local strict=false
+  
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --schema) schema="$2"; shift 2 ;;
+      --strict) strict=true; shift ;;
+      *) shift ;;
+    esac
+  done
+  
+  if [ ! -f "$envfile" ]; then
+    log_err "Env file not found: $envfile"
+    exit 1
   fi
-
-  local count
-  count=$(echo "$age_files" | wc -l | tr -d ' ')
-  echo -e "${BLUE}🔄 Rotating encryption key for $count file(s)...${NC}"
-
-  # Backup old key
-  cp "$KEY_FILE" "${KEY_FILE}.bak"
-
-  # Decrypt all files with old key
-  local tmpdir
-  tmpdir=$(mktemp -d /tmp/env-manager-rotate.XXXXXX)
-
-  while IFS= read -r agefile; do
-    local base
-    base=$(basename "$agefile")
-    age --decrypt -i "${KEY_FILE}.bak" -o "${tmpdir}/${base}" "$agefile"
-  done <<< "$age_files"
-
-  # Generate new key
-  age-keygen -o "$KEY_FILE" 2>/dev/null
-  chmod 600 "$KEY_FILE"
-  log_ok "New key generated"
-
-  local pubkey
-  pubkey=$(grep "public key:" "$KEY_FILE" | awk '{print $NF}')
-
-  # Re-encrypt with new key
-  while IFS= read -r agefile; do
-    local base
-    base=$(basename "$agefile")
-    age -r "$pubkey" -o "$agefile" "${tmpdir}/${base}"
-  done <<< "$age_files"
-
-  # Cleanup
-  rm -rf "$tmpdir"
-
-  log_ok "Re-encrypted $count files"
-  log_warn "Old key backed up to ${KEY_FILE}.bak"
+  
+  # Auto-detect schema
+  if [ -z "$schema" ]; then
+    local dir
+    dir=$(dirname "$envfile")
+    if [ -f "$dir/.env.schema" ]; then
+      schema="$dir/.env.schema"
+    else
+      log_err "No schema found. Use --schema or create .env.schema"
+      exit 1
+    fi
+  fi
+  
+  if [ ! -f "$schema" ]; then
+    log_err "Schema not found: $schema"
+    exit 1
+  fi
+  
+  echo "🔍 Validating $envfile against $schema"
+  echo ""
+  
+  local errors=0 warnings=0
+  
+  while IFS= read -r rule; do
+    # Skip comments and blanks
+    [[ "$rule" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "${rule// }" ]] && continue
+    
+    local varname
+    varname=$(echo "$rule" | cut -d= -f1)
+    local constraints
+    constraints=$(echo "$rule" | cut -d= -f2-)
+    
+    local required=false default_val="" var_type="string" allowed_values=""
+    
+    IFS='|' read -ra parts <<< "$constraints"
+    for part in "${parts[@]}"; do
+      case "$part" in
+        required) required=true ;;
+        optional) required=false ;;
+        default=*) default_val="${part#default=}" ;;
+        type=*) var_type="${part#type=}" ;;
+        values=*) allowed_values="${part#values=}" ;;
+      esac
+    done
+    
+    local value
+    value=$(get_env_value "$envfile" "$varname")
+    
+    if [ -z "$value" ]; then
+      if $required; then
+        log_err "$varname = MISSING (required)"
+        ((errors++))
+      elif [ -n "$default_val" ]; then
+        log_ok "$varname = $default_val (default)"
+      else
+        log_warn "$varname = empty (optional)"
+        ((warnings++))
+      fi
+      continue
+    fi
+    
+    # Type validation
+    local type_ok=true
+    case "$var_type" in
+      number)
+        [[ "$value" =~ ^[0-9]+$ ]] || type_ok=false
+        ;;
+      bool)
+        [[ "$value" =~ ^(true|false|1|0|yes|no)$ ]] || type_ok=false
+        ;;
+      url)
+        [[ "$value" =~ ^[a-zA-Z][a-zA-Z0-9+.-]*:// ]] || type_ok=false
+        ;;
+    esac
+    
+    if ! $type_ok; then
+      log_err "$varname = $value (invalid $var_type)"
+      ((errors++))
+      continue
+    fi
+    
+    # Values validation
+    if [ -n "$allowed_values" ]; then
+      local found=false
+      IFS=',' read -ra vals <<< "$allowed_values"
+      for v in "${vals[@]}"; do
+        [ "$value" = "$v" ] && found=true
+      done
+      if ! $found; then
+        log_err "$varname = $value (not in: $allowed_values)"
+        ((errors++))
+        continue
+      fi
+    fi
+    
+    # Mask secrets
+    if [[ "$varname" =~ (KEY|SECRET|TOKEN|PASSWORD|PASS) ]]; then
+      log_ok "$varname = *** (set)"
+    else
+      log_ok "$varname = $value"
+    fi
+    
+  done < "$schema"
+  
+  echo ""
+  if [ $errors -gt 0 ]; then
+    log_err "Validation FAILED: $errors error(s), $warnings warning(s)"
+    exit 1
+  else
+    log_ok "Validation PASSED ($warnings warning(s))"
+  fi
 }
 
-# ─── Main ────────────────────────────────────────────────────────────────
+cmd_diff() {
+  local file1="$1"
+  local file2="$2"
+  
+  if [ ! -f "$file1" ] || [ ! -f "$file2" ]; then
+    log_err "Both files must exist"
+    exit 1
+  fi
+  
+  echo "📊 Environment Diff: $file1 ↔ $file2"
+  echo "─────────────────────────────────────────"
+  printf "%-25s │ %-20s │ %-20s\n" "Variable" "$(basename "$file1")" "$(basename "$file2")"
+  echo "─────────────────────────────────────────"
+  
+  local different=0 only1=0 only2=0
+  
+  # Get all unique keys
+  local all_keys
+  all_keys=$(cat <(get_env_keys "$file1") <(get_env_keys "$file2") | sort -u)
+  
+  while IFS= read -r key; do
+    [ -z "$key" ] && continue
+    local val1 val2
+    val1=$(get_env_value "$file1" "$key")
+    val2=$(get_env_value "$file2" "$key")
+    
+    # Mask secrets
+    local d_val1="$val1" d_val2="$val2"
+    if [[ "$key" =~ (KEY|SECRET|TOKEN|PASSWORD|PASS) ]]; then
+      [ -n "$val1" ] && d_val1="***"
+      [ -n "$val2" ] && d_val2="***"
+    fi
+    
+    # Truncate long values
+    [ ${#d_val1} -gt 18 ] && d_val1="${d_val1:0:15}..."
+    [ ${#d_val2} -gt 18 ] && d_val2="${d_val2:0:15}..."
+    
+    if [ -z "$val1" ]; then
+      printf "%-25s │ %-20s │ %-20s\n" "$key" "(missing)" "$d_val2"
+      ((only2++))
+    elif [ -z "$val2" ]; then
+      printf "%-25s │ %-20s │ %-20s\n" "$key" "$d_val1" "(missing)"
+      ((only1++))
+    elif [ "$val1" != "$val2" ]; then
+      printf "%-25s │ %-20s │ %-20s\n" "$key" "$d_val1" "$d_val2"
+      ((different++))
+    fi
+  done <<< "$all_keys"
+  
+  echo "─────────────────────────────────────────"
+  echo "Summary: $different different, $only1 only-in-$(basename "$file1"), $only2 only-in-$(basename "$file2")"
+}
 
-if [ $# -eq 0 ]; then
-  usage
-  exit 0
+cmd_example() {
+  local input="$1"
+  local output="${2:-${input%.env*}.env.example}"
+  
+  if [ ! -f "$input" ]; then
+    log_err "File not found: $input"
+    exit 1
+  fi
+  
+  local count=0
+  > "$output"
+  
+  while IFS= read -r line; do
+    # Pass through comments
+    if [[ "$line" =~ ^[[:space:]]*# ]] || [ -z "$line" ]; then
+      echo "$line" >> "$output"
+      continue
+    fi
+    
+    local key value
+    key=$(echo "$line" | cut -d= -f1)
+    value=$(echo "$line" | cut -d= -f2-)
+    
+    # Strip secrets, keep safe defaults
+    if [[ "$key" =~ (KEY|SECRET|TOKEN|PASSWORD|PASS|PRIVATE) ]]; then
+      echo "${key}=" >> "$output"
+    elif [[ "$value" =~ ^(true|false|[0-9]+|debug|info|warn|error)$ ]]; then
+      echo "${key}=${value}" >> "$output"
+    else
+      echo "${key}=" >> "$output"
+    fi
+    ((count++))
+  done < "$input"
+  
+  log_ok "Generated $output ($count vars, secrets stripped, defaults kept)"
+}
+
+cmd_protect() {
+  local project_dir="${1:-.}"
+  local quiet=false
+  [ "${2:-}" = "--quiet" ] && quiet=true
+  
+  # Update .gitignore
+  local gitignore="$project_dir/.gitignore"
+  local entries=(".env" ".env.local" ".env.*.local" ".env.production" ".env.staging")
+  local added=0
+  
+  touch "$gitignore"
+  for entry in "${entries[@]}"; do
+    if ! grep -qxF "$entry" "$gitignore"; then
+      echo "$entry" >> "$gitignore"
+      ((added++))
+    fi
+  done
+  
+  $quiet || log_ok ".gitignore updated ($added entries added)"
+  
+  # Install pre-commit hook
+  local hooks_dir="$project_dir/.git/hooks"
+  if [ -d "$project_dir/.git" ]; then
+    mkdir -p "$hooks_dir"
+    cat > "$hooks_dir/pre-commit" << 'HOOK'
+#!/bin/bash
+# env-manager: Block .env file commits
+FILES=$(git diff --cached --name-only | grep -E '\.env$|\.env\.[^age]' | grep -v '.env.example' | grep -v '.env.schema' | grep -v '.env.age')
+if [ -n "$FILES" ]; then
+  echo "❌ BLOCKED: Attempting to commit .env files:"
+  echo "$FILES"
+  echo ""
+  echo "Encrypt first: env-manager encrypt <file>"
+  echo "Or force: git commit --no-verify"
+  exit 1
 fi
+HOOK
+    chmod +x "$hooks_dir/pre-commit"
+    $quiet || log_ok "pre-commit hook installed"
+  fi
+  
+  # Scan git history
+  if [ -d "$project_dir/.git" ] && ! $quiet; then
+    local leaked
+    leaked=$(cd "$project_dir" && git log --all --diff-filter=A --name-only --pretty=format: 2>/dev/null | grep -E '\.env$' | head -5)
+    if [ -n "$leaked" ]; then
+      log_warn "Found .env in git history:"
+      echo "$leaked" | while read -r f; do echo "  - $f"; done
+      echo "  Remove with: git filter-branch or BFG Repo-Cleaner"
+    fi
+  fi
+}
 
-COMMAND="$1"
-shift
+cmd_rotate() {
+  local dir="$1"
+  shift
+  local old_key="" new_key=""
+  
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --old-key) old_key="$2"; shift 2 ;;
+      --new-key) new_key="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  
+  ensure_age
+  
+  [ -z "$old_key" ] && old_key="$KEY_FILE"
+  [ -z "$new_key" ] && { log_err "Specify --new-key"; exit 1; }
+  
+  local new_pubkey
+  new_pubkey=$(age-keygen -y "$new_key" 2>/dev/null)
+  local count=0
+  
+  while IFS= read -r -d '' agefile; do
+    local tmp
+    tmp=$(mktemp)
+    age -d -i "$old_key" -o "$tmp" "$agefile"
+    age -r "$new_pubkey" -o "$agefile" "$tmp"
+    rm "$tmp"
+    log_ok "Re-encrypted: $agefile"
+    ((count++))
+  done < <(find "$dir" -name "*.env.age" -o -name ".env.age" | tr '\n' '\0')
+  
+  log_ok "Rotated $count files to new key"
+}
+
+# ─── MAIN ───────────────────────────────────────────────────
+
+usage() {
+  cat << EOF
+env-manager v$VERSION — Manage .env files
+
+USAGE:
+  env-manager <command> [options]
+
+COMMANDS:
+  init <dir>                    Initialize project with env-manager
+  encrypt <file> [output]       Encrypt .env file with age
+  decrypt <file> [output]       Decrypt .env.age file
+  encrypt-all <dir>             Encrypt all .env files in directory
+  sync <source> <target>        Sync env vars (keeps target overrides)
+  validate <file> [--schema X]  Validate against schema
+  diff <file1> <file2>          Compare two env files
+  example <file> [output]       Generate .env.example (strip secrets)
+  protect <dir>                 Set up git protection hooks
+  rotate <dir> --old-key X --new-key Y  Re-encrypt with new key
+
+OPTIONS:
+  --schema <file>    Schema file for validation
+  --strict           Fail on warnings too
+  --key <file>       Custom key file for decrypt
+
+EXAMPLES:
+  env-manager init .
+  env-manager encrypt .env
+  env-manager validate .env --schema .env.schema
+  env-manager diff .env.dev .env.prod
+  env-manager sync .env.dev .env.staging
+EOF
+}
+
+COMMAND="${1:-help}"
+shift 2>/dev/null || true
 
 case "$COMMAND" in
-  init)
-    cmd_init
-    ;;
-  encrypt)
-    output=""
-    input="$1"; shift
-    while [[ $# -gt 0 ]]; do
-      case $1 in
-        -o|--output) output="$2"; shift 2 ;;
-        *) shift ;;
-      esac
-    done
-    cmd_encrypt "$input" "${output:-${input}.age}"
-    ;;
-  decrypt)
-    output=""
-    input="$1"; shift
-    while [[ $# -gt 0 ]]; do
-      case $1 in
-        -o|--output) output="$2"; shift 2 ;;
-        *) shift ;;
-      esac
-    done
-    cmd_decrypt "$input" "${output:-${input%.age}}"
-    ;;
-  diff)
-    [ $# -lt 2 ] && { log_err "Usage: env-manager.sh diff <file1> <file2>"; exit 1; }
-    cmd_diff "$1" "$2"
-    ;;
-  template)
-    output=""
-    input="$1"; shift
-    while [[ $# -gt 0 ]]; do
-      case $1 in
-        -o|--output) output="$2"; shift 2 ;;
-        *) shift ;;
-      esac
-    done
-    cmd_template "$input" "${output:-${input}.template}"
-    ;;
-  validate)
-    template=""
-    strict="false"
-    input="$1"; shift
-    while [[ $# -gt 0 ]]; do
-      case $1 in
-        --template) template="$2"; shift 2 ;;
-        --strict) strict="true"; shift ;;
-        *) shift ;;
-      esac
-    done
-    [ -z "$template" ] && { log_err "Usage: env-manager.sh validate <file> --template <tmpl>"; exit 1; }
-    cmd_validate "$input" "$template" "$strict"
-    ;;
-  generate)
-    output=""
-    input="$1"; shift
-    while [[ $# -gt 0 ]]; do
-      case $1 in
-        -o|--output) output="$2"; shift 2 ;;
-        *) shift ;;
-      esac
-    done
-    cmd_generate "$input" "${output:-.env.local}"
-    ;;
-  list)
-    [ $# -lt 1 ] && { log_err "Usage: env-manager.sh list <file>"; exit 1; }
-    cmd_list "$1"
-    ;;
-  search)
-    [ $# -lt 2 ] && { log_err "Usage: env-manager.sh search <var> <files...>"; exit 1; }
-    var="$1"; shift
-    cmd_search "$var" "$@"
-    ;;
-  sync)
-    [ $# -lt 2 ] && { log_err "Usage: env-manager.sh sync <source> <target>"; exit 1; }
-    cmd_sync "$1" "$2"
-    ;;
-  rotate-key)
-    [ $# -lt 1 ] && { log_err "Usage: env-manager.sh rotate-key <dir>"; exit 1; }
-    cmd_rotate_key "$1"
-    ;;
-  -h|--help|help)
-    usage
-    ;;
-  -v|--version|version)
-    echo "env-manager v${VERSION}"
-    ;;
-  *)
-    log_err "Unknown command: $COMMAND"
-    usage
-    exit 1
-    ;;
+  init)         cmd_init "$@" ;;
+  encrypt)      cmd_encrypt "$@" ;;
+  decrypt)      cmd_decrypt "$@" ;;
+  encrypt-all)  cmd_encrypt_all "$@" ;;
+  sync)         cmd_sync "$@" ;;
+  validate)     cmd_validate "$@" ;;
+  diff)         cmd_diff "$@" ;;
+  example)      cmd_example "$@" ;;
+  protect)      cmd_protect "$@" ;;
+  rotate)       cmd_rotate "$@" ;;
+  help|--help|-h) usage ;;
+  version|--version|-v) echo "env-manager v$VERSION" ;;
+  *) log_err "Unknown command: $COMMAND"; usage; exit 1 ;;
 esac

@@ -6,55 +6,54 @@
 - **Display Name:** Environment Manager
 - **Categories:** [dev-tools, security]
 - **Price:** $10
-- **Dependencies:** [bash, age, diff]
+- **Dependencies:** [bash, age, git]
 - **Icon:** 🔐
 
 ## Tagline
-
-Encrypt, diff, validate, and sync .env files across environments
+Encrypt, sync, validate, and protect .env files across all your projects
 
 ## Description
 
-Managing `.env` files across dev, staging, and production is a mess. Variables get out of sync, secrets end up in git history, and new developers spend 30 minutes figuring out what environment variables they need.
+Managing `.env` files across projects is a mess. Secrets get committed to git, staging is missing vars that prod has, and onboarding a new dev means hunting down API keys. You need a system.
 
-Environment Manager fixes this. Encrypt secrets at rest with `age` (a modern, simple alternative to GPG), diff environments to catch missing variables, generate templates for onboarding, and validate configs before deployment. All from a single bash script — no external services, no subscriptions.
+Environment Manager handles the full `.env` lifecycle: encrypt secrets with `age` (modern, audited encryption), sync variables between dev/staging/prod while keeping overrides, validate required vars before deploy, diff configs side-by-side, and install git hooks that prevent accidental commits.
 
 **What it does:**
-- 🔐 Encrypt/decrypt `.env` files with `age` (commit safely to git)
-- 📊 Diff two environments side-by-side (shows missing, extra, and changed vars)
-- ✅ Validate `.env` against a template (catch missing vars before deploy)
-- 📝 Generate templates from existing `.env` files
-- 🔄 Sync missing variables between environments
-- 🔍 Search for a variable across all your `.env` files
-- 🔑 Rotate encryption keys with one command
+- 🔐 Encrypt/decrypt .env files with `age` (commit encrypted files safely)
+- 🔄 Sync between environments (adds missing vars, keeps overrides)
+- ✅ Validate against schema (required vars, types, allowed values)
+- 📊 Diff two env files (shows differences, masks secrets)
+- 🛡️ Git protection (pre-commit hooks, .gitignore, history scanning)
+- 📋 Generate .env.example templates (strips secrets, keeps defaults)
+- 🔑 Key rotation (re-encrypt all files with new key)
 
-Perfect for developers, DevOps engineers, and teams managing multiple environments who want secure, organized `.env` management without SaaS tools.
+Perfect for developers and teams managing multiple environments who want bulletproof secret management without heavy tools like HashiCorp Vault.
 
 ## Quick Start Preview
 
 ```bash
-# Initialize (one time)
-bash scripts/env-manager.sh init
-
-# Encrypt your .env
+# Encrypt secrets
 bash scripts/env-manager.sh encrypt .env
-
-# Diff dev vs prod
-bash scripts/env-manager.sh diff .env.dev .env.prod
+# ✅ Encrypted → .env.age (safe to commit)
 
 # Validate before deploy
-bash scripts/env-manager.sh validate .env --template .env.template --strict
+bash scripts/env-manager.sh validate .env.prod --schema .env.schema
+# ✅ DATABASE_URL = set
+# ❌ REDIS_URL = MISSING (required)
+
+# Diff environments
+bash scripts/env-manager.sh diff .env.dev .env.prod
 ```
 
 ## Core Capabilities
 
-1. **Encryption at rest** — Encrypt .env with age, commit .env.age to git safely
-2. **Environment diffing** — Compare any two .env files, see missing/changed vars
-3. **Template generation** — Auto-generate .env.template from existing configs
-4. **Validation** — Check .env against template, fail CI on missing vars
-5. **Auto-decryption** — Diff and validate encrypted .age files transparently
-6. **Variable search** — Find a variable across all your .env files
-7. **Environment sync** — Copy missing vars from one env to another
-8. **Key rotation** — Rotate encryption keys, re-encrypt all files
-9. **Secret redaction** — Sensitive values auto-redacted in output
-10. **Backup safety** — Auto-backup before any overwrite operation
+1. **Age encryption** — Encrypt .env files with modern, audited `age` tool
+2. **Environment sync** — Copy vars between envs, preserving overrides
+3. **Schema validation** — Required/optional, types, default values, allowed values
+4. **Side-by-side diff** — Compare any two env files with secret masking
+5. **Git protection** — Pre-commit hooks block accidental .env commits
+6. **Template generation** — Auto-create .env.example from real .env
+7. **Bulk operations** — Encrypt/validate all projects at once
+8. **Key rotation** — Re-encrypt everything with a new key
+9. **CI/CD ready** — Decrypt + validate in pipelines
+10. **Zero external services** — Runs locally, no SaaS dependency
