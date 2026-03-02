@@ -1,0 +1,29 @@
+# Process Watchdog Configuration
+# Copy this file and customize for your services
+
+global:
+  interval: 10
+  max_restarts: 5
+  cooldown: 60
+  log_file: /var/log/process-watchdog.log
+
+processes:
+  - name: nginx
+    type: service
+    interval: 10
+    max_restarts: 5
+    alerts: [telegram]
+
+  - name: "node /app/server.js"
+    type: process
+    restart_cmd: "cd /app && node server.js &"
+    interval: 15
+    max_restarts: 3
+    cooldown: 120
+    alerts: [telegram, webhook]
+
+  - name: postgres
+    type: service
+    interval: 30
+    max_restarts: 3
+    alerts: [telegram]
