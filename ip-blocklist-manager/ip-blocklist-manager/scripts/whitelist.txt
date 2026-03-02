@@ -1,0 +1,7 @@
+# Whitelisted IPs/CIDRs — one per line
+# These will never be blocked, even if they appear in threat feeds
+# Private ranges (always safe)
+10.0.0.0/8
+172.16.0.0/12
+192.168.0.0/16
+# Add your server's public IPs below:
