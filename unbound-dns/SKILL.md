@@ -1,7 +1,7 @@
 ---
 name: unbound-dns
 description: >-
-  Install and manage Unbound as a local recursive DNS resolver for privacy, speed, and ad-blocking.
+  Install and manage a local recursive DNS resolver for privacy, speed, and ad-blocking.
 categories: [security, home]
 dependencies: [bash, curl, unbound]
 ---
@@ -10,9 +10,9 @@ dependencies: [bash, curl, unbound]
 
 ## What This Does
 
-Installs and configures [Unbound](https://nlnetlabs.nl/projects/unbound/about/) as a local recursive DNS resolver. Instead of sending every DNS query to Google or Cloudflare, your machine resolves domains itself — directly from root servers. Adds DNSSEC validation, optional ad-blocking via blocklists, and query logging.
+Installs and configures [Unbound](https://nlnetlabs.nl/projects/unbound/about/) as a local recursive DNS resolver. Instead of sending every DNS query to Google or Cloudflare, your machine resolves domains itself by talking directly to authoritative nameservers. This gives you **full DNS privacy**, **faster cached lookups**, and optional **ad-blocking** via blocklists.
 
-**Why:** Full DNS privacy (no third-party sees your queries), faster resolution after cache warm-up, DNSSEC validation out of the box, and optional ad/tracker blocking without Pi-hole.
+**Example:** "Install Unbound, configure DNSSEC validation, add ad-blocking, and verify it's working — all in 5 minutes."
 
 ## Quick Start (5 minutes)
 
@@ -22,247 +22,245 @@ Installs and configures [Unbound](https://nlnetlabs.nl/projects/unbound/about/) 
 bash scripts/install.sh
 ```
 
-This detects your OS (Debian/Ubuntu, RHEL/Fedora, Alpine, macOS) and installs Unbound + downloads root hints.
+This detects your OS (Ubuntu/Debian, RHEL/Fedora, Arch, Alpine, macOS) and installs Unbound + dependencies.
 
-### 2. Apply Base Configuration
+### 2. Configure & Start
 
 ```bash
-sudo bash scripts/configure.sh --mode recursive
+bash scripts/configure.sh
 ```
 
-Modes:
-- `recursive` — Full recursive resolver (maximum privacy, queries root servers directly)
-- `forwarding` — Forward to upstream (Cloudflare/Quad9) with caching + DNSSEC
-- `adblock` — Recursive + ad/tracker blocking via blocklists
+This writes an optimized `unbound.conf`, fetches root hints, enables DNSSEC, and starts the service.
 
 ### 3. Verify It Works
 
 ```bash
-bash scripts/status.sh
+bash scripts/verify.sh
 ```
 
-Output:
+**Output:**
 ```
-✅ Unbound is running (PID 1234)
-✅ DNSSEC validation: active
-✅ Listening on: 127.0.0.1:53
-✅ Cache entries: 1,847
-✅ Queries today: 3,291
-⏱️ Avg response: 12ms (cached), 85ms (recursive)
+[✓] Unbound is running (PID 12345)
+[✓] DNS resolution working: example.com → 93.184.216.34 (12ms)
+[✓] DNSSEC validation: PASS (sigok.verteiltesysteme.net)
+[✓] Recursive resolution: PASS (not forwarding to upstream)
+[✓] Cache hit speed: 0ms (second query)
 ```
-
-### 4. Set as System DNS
-
-```bash
-sudo bash scripts/set-system-dns.sh
-```
-
-Points your system's `/etc/resolv.conf` to `127.0.0.1`. Creates backup of original config.
 
 ## Core Workflows
 
-### Workflow 1: Full Recursive Setup (Maximum Privacy)
+### Workflow 1: Privacy-First DNS (Default)
+
+Full recursive resolution — no third-party DNS provider sees your queries.
 
 ```bash
-# Install + configure + set as system DNS
-bash scripts/install.sh
-sudo bash scripts/configure.sh --mode recursive
-sudo bash scripts/set-system-dns.sh
-
-# Test DNSSEC
-bash scripts/test-dnssec.sh
-# ✅ sigok.verteiltesysteme.net — DNSSEC valid
-# ❌ sigfail.verteiltesysteme.net — DNSSEC correctly rejected
+bash scripts/configure.sh --mode recursive
 ```
 
-### Workflow 2: Forwarding Mode (Speed + Privacy Balance)
+Your machine queries root servers → TLD servers → authoritative servers directly.
+
+### Workflow 2: Performance Mode (Forward + Cache)
+
+Forward to a fast upstream (Cloudflare/Quad9) but cache aggressively locally.
 
 ```bash
-# Forward to Quad9 (malware blocking) with local cache
-sudo bash scripts/configure.sh --mode forwarding --upstream quad9
-
-# Options: cloudflare, quad9, google, custom
-# Custom:
-sudo bash scripts/configure.sh --mode forwarding --upstream custom --dns "9.9.9.9 149.112.112.112"
+bash scripts/configure.sh --mode forward --upstream 1.1.1.1 9.9.9.9
 ```
+
+Best for: fast lookups when you trust an upstream but want local caching.
 
 ### Workflow 3: Ad-Blocking DNS
 
+Block ads and trackers at the DNS level using community blocklists.
+
 ```bash
-# Recursive + StevenBlack unified hosts blocklist
-sudo bash scripts/configure.sh --mode adblock
-
-# Update blocklists (run weekly via cron)
-sudo bash scripts/update-blocklist.sh
-
-# Check blocked domains count
-bash scripts/status.sh --blocklist
-# 🚫 Blocked domains: 142,857
-# 📅 Last updated: 2026-03-02
+bash scripts/adblock.sh --enable
 ```
 
-### Workflow 4: Query Logging & Analysis
+This fetches Steven Black's unified hosts list and converts it to Unbound local-zone blocks. Updates automatically via cron.
 
-```bash
-# Enable query logging
-sudo bash scripts/configure.sh --logging on
-
-# View recent queries
-bash scripts/query-log.sh --last 50
-
-# Top queried domains
-bash scripts/query-log.sh --top 20
-
-# Find suspicious queries
-bash scripts/query-log.sh --suspicious
+```
+[✓] Downloaded blocklist: 85,000 domains
+[✓] Converted to Unbound format: /etc/unbound/blocklist.conf
+[✓] Cron job added: daily update at 4:00 AM
+[✓] Unbound reloaded
 ```
 
-### Workflow 5: Cache Management
+To disable:
+```bash
+bash scripts/adblock.sh --disable
+```
+
+### Workflow 4: DNS-over-TLS (DoT)
+
+Encrypt DNS queries to upstream resolvers.
 
 ```bash
-# View cache stats
-bash scripts/cache.sh --stats
+bash scripts/configure.sh --mode forward --dot --upstream 1.1.1.1@853 9.9.9.9@853
+```
 
-# Dump cache contents
-bash scripts/cache.sh --dump
+### Workflow 5: Monitor & Stats
 
-# Flush entire cache
-sudo bash scripts/cache.sh --flush
+Check resolver performance and cache statistics.
 
-# Flush specific domain
-sudo bash scripts/cache.sh --flush example.com
+```bash
+bash scripts/stats.sh
+```
+
+**Output:**
+```
+Unbound Statistics (last 24h):
+  Total queries:     12,847
+  Cache hits:        9,231 (71.8%)
+  Cache misses:      3,616 (28.2%)
+  Avg response time: 2.3ms (cached) / 45ms (recursive)
+  DNSSEC validated:  11,502 (89.5%)
+  Blocked (adblock): 1,847 (14.4%)
+  Uptime:            3d 14h 22m
 ```
 
 ## Configuration
 
-### Config File Location
-
-- Linux: `/etc/unbound/unbound.conf`
-- macOS: `/opt/homebrew/etc/unbound/unbound.conf` (or `/usr/local/etc/unbound/`)
-
-### Key Settings
-
-```yaml
-# Performance tuning (scripts/configure.sh handles these)
-num-threads: 4          # Match CPU cores
-msg-cache-size: 64m     # Message cache
-rrset-cache-size: 128m  # RRset cache
-cache-min-ttl: 300      # Minimum cache TTL (seconds)
-cache-max-ttl: 86400    # Maximum cache TTL (1 day)
-prefetch: yes           # Prefetch expiring entries
-
-# Privacy
-hide-identity: yes
-hide-version: yes
-qname-minimisation: yes  # RFC 7816 — minimize info sent to auth servers
-
-# Security
-harden-glue: yes
-harden-dnssec-stripped: yes
-use-caps-for-id: yes     # 0x20 encoding for spoofing protection
-```
-
-### Access Control
+### Environment Variables
 
 ```bash
-# Allow local network to query (default: localhost only)
-sudo bash scripts/configure.sh --allow-network 192.168.1.0/24
+# Override defaults
+export UNBOUND_LISTEN="127.0.0.1"       # Listen address (default: localhost)
+export UNBOUND_PORT="53"                 # Listen port
+export UNBOUND_CACHE_SIZE="256m"         # Cache size (default: 256MB)
+export UNBOUND_NUM_THREADS="2"           # Worker threads (default: auto-detect)
+export UNBOUND_VERBOSITY="1"             # Log verbosity (0-5)
+```
 
-# Serve as DNS for entire LAN (e.g., set in router DHCP)
-sudo bash scripts/configure.sh --interface 0.0.0.0 --allow-network 192.168.0.0/16
+### Config File
+
+The main config lives at `/etc/unbound/unbound.conf`. The configure script generates an optimized version, but you can edit it directly:
+
+```yaml
+# Key settings in unbound.conf
+server:
+    interface: 127.0.0.1
+    port: 53
+    do-ip6: no
+    
+    # Performance
+    num-threads: 2
+    msg-cache-size: 128m
+    rrset-cache-size: 256m
+    cache-min-ttl: 300
+    cache-max-ttl: 86400
+    prefetch: yes
+    prefetch-key: yes
+    
+    # Security
+    hide-identity: yes
+    hide-version: yes
+    harden-glue: yes
+    harden-dnssec-stripped: yes
+    use-caps-for-id: yes
+    
+    # Ad-blocking (if enabled)
+    include: /etc/unbound/blocklist.conf
 ```
 
 ## Advanced Usage
 
-### Run as Cron for Blocklist Updates
+### Use as Network-Wide DNS
+
+Serve DNS for your entire LAN (e.g., from a Raspberry Pi or home server):
 
 ```bash
-# Update blocklists weekly (Sunday 3am)
-echo "0 3 * * 0 root /path/to/scripts/update-blocklist.sh >> /var/log/unbound-blocklist.log 2>&1" | sudo tee /etc/cron.d/unbound-blocklist
+bash scripts/configure.sh --mode recursive --listen 0.0.0.0 --access-control "192.168.1.0/24 allow"
 ```
 
-### Monitor with OpenClaw Cron
+Then point your router's DHCP DNS setting to this machine's IP.
+
+### Custom Local Domains
+
+Add local DNS entries for homelab services:
 
 ```bash
-# Check Unbound health every 30 min
-bash scripts/status.sh --json
-# Returns JSON for easy parsing:
-# {"running":true,"pid":1234,"dnssec":true,"cache_entries":1847,"queries_today":3291}
-```
-
-### Custom Local Zones
-
-```bash
-# Add local DNS entries (e.g., homelab services)
-sudo bash scripts/local-zone.sh add myserver.home 192.168.1.100
-sudo bash scripts/local-zone.sh add nas.home 192.168.1.50
-
-# List local zones
+bash scripts/local-zone.sh add myserver.home 192.168.1.100
+bash scripts/local-zone.sh add nas.home 192.168.1.50
 bash scripts/local-zone.sh list
-
-# Remove
-sudo bash scripts/local-zone.sh remove myserver.home
+bash scripts/local-zone.sh remove myserver.home
 ```
 
-### DNSSEC Trust Anchor Updates
+### Flush Cache
 
 ```bash
-# Auto-update root trust anchor
-sudo bash scripts/update-root-hints.sh
+bash scripts/cache.sh flush
+bash scripts/cache.sh flush example.com   # Flush specific domain
+bash scripts/cache.sh dump                 # Dump cache contents
+```
+
+### Health Check (for cron)
+
+```bash
+# Add to crontab — alerts if Unbound is down
+*/5 * * * * bash /path/to/scripts/healthcheck.sh || echo "Unbound DOWN" | mail -s "DNS Alert" admin@example.com
 ```
 
 ## Troubleshooting
 
 ### Issue: "port 53 already in use"
 
-**Fix:** Another DNS resolver (systemd-resolved, dnsmasq) is running.
-```bash
-# Check what's using port 53
-sudo ss -tlnp | grep :53
+Another DNS service (systemd-resolved, dnsmasq) is using port 53.
 
+**Fix:**
+```bash
 # Disable systemd-resolved (Ubuntu)
 sudo systemctl disable --now systemd-resolved
-sudo bash scripts/set-system-dns.sh
+sudo rm /etc/resolv.conf
+echo "nameserver 127.0.0.1" | sudo tee /etc/resolv.conf
+
+# Or run Unbound on a different port
+bash scripts/configure.sh --port 5353
+```
+
+### Issue: "DNSSEC validation failed"
+
+System clock may be wrong (DNSSEC requires accurate time).
+
+**Fix:**
+```bash
+sudo timedatectl set-ntp true
+sudo systemctl restart unbound
 ```
 
 ### Issue: Slow first queries
 
-**Expected.** Recursive resolution queries root → TLD → authoritative servers. After first lookup, results are cached. Use `prefetch: yes` to keep popular entries warm.
-
-### Issue: DNSSEC validation failures
+Normal — recursive resolution requires multiple round-trips. Subsequent queries are cached (sub-millisecond). Enable prefetching for popular domains:
 
 ```bash
-# Check if it's the domain or your config
-bash scripts/test-dnssec.sh --domain problematic-domain.com
-
-# Temporarily disable DNSSEC for debugging
-sudo bash scripts/configure.sh --dnssec off
+# Already enabled by default in our config
+# prefetch: yes
+# prefetch-key: yes
 ```
 
-### Issue: Can't resolve after reboot
+### Issue: Unbound won't start after config edit
 
+**Fix:**
 ```bash
-# Check if Unbound started
-sudo systemctl status unbound
+# Check config syntax
+unbound-checkconf /etc/unbound/unbound.conf
 
-# Check if resolv.conf was overwritten
-cat /etc/resolv.conf
-# Should show: nameserver 127.0.0.1
-
-# Re-apply if needed
-sudo bash scripts/set-system-dns.sh
+# Check logs
+sudo journalctl -u unbound --since "5 minutes ago"
 ```
 
 ## Uninstall
 
 ```bash
-# Restore original DNS and stop Unbound
-sudo bash scripts/uninstall.sh
+bash scripts/uninstall.sh
 ```
+
+Removes Unbound, restores original DNS settings, removes cron jobs and blocklists.
 
 ## Dependencies
 
 - `bash` (4.0+)
-- `curl` (for downloading root hints and blocklists)
+- `curl` or `wget` (for downloading root hints + blocklists)
 - `unbound` (installed by install.sh)
-- Root/sudo access (DNS binds to port 53)
+- `openssl` (for DNS-over-TLS)
+- Root/sudo access (DNS services require port 53)

@@ -5,53 +5,66 @@
 - **Name:** unbound-dns
 - **Display Name:** Unbound DNS Resolver
 - **Categories:** [security, home]
+- **Price:** $12
 - **Icon:** 🛡️
-- **Price:** $10
 - **Dependencies:** [bash, curl, unbound]
 
 ## Tagline
 
-Run your own recursive DNS resolver — full privacy, DNSSEC, and ad-blocking built in.
+"Private recursive DNS resolver — Stop leaking every domain you visit"
 
 ## Description
 
-Every DNS query you make tells someone which websites you visit. Even "privacy-focused" DNS providers like Cloudflare and Google see every domain you resolve. The only way to truly own your DNS is to resolve it yourself.
+Every DNS query you make tells someone what you're browsing. Google, Cloudflare, your ISP — they all see every domain you visit. Even "privacy-friendly" DNS providers still log your queries on their servers.
 
-Unbound DNS Resolver installs and configures Unbound as a local recursive DNS resolver. Your machine queries root servers directly — no middleman sees your traffic. It validates responses with DNSSEC, caches aggressively for speed, and optionally blocks 140,000+ ad/tracker domains using the StevenBlack hosts list.
+Unbound DNS Resolver sets up a local recursive DNS resolver that talks directly to authoritative nameservers. No middleman. Your DNS queries never leave your machine. Plus you get DNSSEC validation, aggressive caching (sub-millisecond repeat lookups), and optional ad-blocking that blocks 85,000+ ad/tracker domains at the DNS level.
 
-**What it does:**
-- 🔒 Full recursive DNS resolution — queries root servers directly, no third-party
-- 🔐 DNSSEC validation — cryptographically verifies DNS responses
-- 🚫 Optional ad/tracker blocking — 140K+ domains blocked (StevenBlack list)
-- ⚡ Aggressive caching — sub-millisecond responses for cached domains
-- 📊 Query logging & analysis — see what's being resolved, find suspicious patterns
-- 🏠 Local DNS zones — add custom entries (homelab, dev servers)
-- 🔄 Auto-updatable blocklists via cron
-- 🖥️ Multi-OS support — Debian, Ubuntu, Fedora, Arch, Alpine, macOS
-
-Perfect for privacy-conscious developers, homelab enthusiasts, and anyone who wants DNS they actually control.
+**What you get:**
+- 🛡️ Full DNS privacy — queries go direct to authoritative servers
+- ⚡ Sub-millisecond cached lookups (vs 20-50ms to external DNS)
+- 🔐 DNSSEC validation out of the box
+- 🚫 DNS-level ad-blocking (85K+ domains, auto-updated daily)
+- 🏠 Custom local zones for homelab services (nas.home, server.home)
+- 📊 Built-in stats dashboard (cache hit rates, query counts, latency)
+- 🔧 One-command install, works on Ubuntu/Debian/RHEL/Arch/macOS
 
 ## Quick Start Preview
 
 ```bash
-bash scripts/install.sh
-sudo bash scripts/configure.sh --mode recursive
-sudo bash scripts/set-system-dns.sh
-bash scripts/status.sh
-# ✅ Unbound is running (PID 1234)
-# ✅ DNSSEC validation: active
-# ✅ Listening on: 127.0.0.1:53
+bash scripts/install.sh       # Auto-detect OS, install Unbound
+bash scripts/configure.sh     # Optimized config + DNSSEC + start
+bash scripts/verify.sh        # Verify everything works
+bash scripts/adblock.sh --enable  # Optional: block 85K ad domains
 ```
 
 ## Core Capabilities
 
-1. Recursive DNS resolution — query root servers directly, maximum privacy
-2. Forwarding mode — cache + DNSSEC with Cloudflare/Quad9/Google upstream (TLS)
-3. Ad-blocking mode — block 140K+ ad/tracker domains at DNS level
-4. DNSSEC validation — reject forged DNS responses automatically
-5. Query logging — analyze DNS traffic, detect suspicious patterns
-6. Local DNS zones — custom domain-to-IP mappings for homelab
-7. Cache management — stats, dump, flush per-domain or full
-8. Multi-OS install — one script handles Debian, Ubuntu, Fedora, Arch, Alpine, macOS
-9. Cron-ready blocklist updates — keep blocklists fresh automatically
-10. Uninstall script — clean restore to original DNS config
+1. Recursive DNS resolution — talk directly to authoritative nameservers
+2. DNSSEC validation — reject spoofed/tampered DNS responses
+3. Aggressive caching — sub-ms repeat lookups, prefetching for popular domains
+4. DNS-level ad-blocking — 85K+ domains via Steven Black's unified list
+5. DNS-over-TLS forwarding — encrypted queries to upstream resolvers
+6. Custom local zones — map homelab domains to local IPs
+7. Multi-OS support — Ubuntu, Debian, RHEL, Fedora, Arch, Alpine, macOS
+8. Network-wide DNS — serve your entire LAN from one machine
+9. Cache management — flush, dump, inspect cached records
+10. Health monitoring — cron-ready health check script with alerting
+11. Statistics dashboard — query counts, cache hit rates, memory usage
+12. Clean uninstall — removes everything, restores original DNS
+
+## Dependencies
+- `bash` (4.0+)
+- `curl`
+- `unbound` (installed by install.sh)
+- Root/sudo access
+
+## Installation Time
+**5 minutes**
+
+## Pricing Justification
+
+**Why $12:**
+- Self-hosted alternative to Pi-hole DNS ($0 but hours of setup)
+- No monthly fees (vs NextDNS $20/yr, custom DNS services)
+- Includes ad-blocking, DNSSEC, local zones, monitoring
+- One-time purchase, unlimited use

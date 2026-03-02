@@ -1,47 +1,34 @@
 #!/bin/bash
-# Manage Unbound cache
+# Manage Unbound DNS cache
 set -euo pipefail
 
-ACTION=""
-DOMAIN=""
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --stats) ACTION="stats"; shift ;;
-        --dump) ACTION="dump"; shift ;;
-        --flush) ACTION="flush"; DOMAIN="${2:-}"; shift; [[ -n "$DOMAIN" ]] && shift ;;
-        *) shift ;;
-    esac
-done
+ACTION="${1:---help}"
 
 case "$ACTION" in
-    stats)
-        echo "📊 Cache Statistics"
-        echo "==================="
-        sudo unbound-control stats_noreset 2>/dev/null | grep -E "^(msg\.cache|rrset\.cache|total\.num)" | while IFS='=' read -r key val; do
-            printf "  %-35s %s\n" "$key" "$val"
-        done
-        ;;
-    dump)
-        echo "📋 Cache Dump (recent entries)"
-        echo "=============================="
-        sudo unbound-control dump_cache 2>/dev/null | head -100
-        ;;
     flush)
-        if [[ -n "$DOMAIN" ]]; then
-            echo "🗑️  Flushing cache for: $DOMAIN"
-            sudo unbound-control flush "$DOMAIN" 2>/dev/null
-            sudo unbound-control flush_type "$DOMAIN" A 2>/dev/null
-            sudo unbound-control flush_type "$DOMAIN" AAAA 2>/dev/null
-            echo "✅ Flushed: $DOMAIN"
+        DOMAIN="${2:-}"
+        if [ -n "$DOMAIN" ]; then
+            sudo unbound-control flush "$DOMAIN"
+            sudo unbound-control flush_type "$DOMAIN" A
+            sudo unbound-control flush_type "$DOMAIN" AAAA
+            echo "[✓] Flushed cache for: $DOMAIN"
         else
-            echo "🗑️  Flushing entire cache..."
-            sudo unbound-control reload 2>/dev/null
-            echo "✅ Cache flushed (config reloaded)"
+            sudo unbound-control reload
+            echo "[✓] Flushed entire cache"
         fi
         ;;
+    dump)
+        echo "=== Cache Dump ==="
+        sudo unbound-control dump_cache | head -100
+        echo "..."
+        TOTAL=$(sudo unbound-control dump_cache | wc -l)
+        echo "(Showing first 100 of $TOTAL entries)"
+        ;;
     *)
-        echo "Usage: bash cache.sh [--stats|--dump|--flush [domain]]"
-        exit 1
+        echo "Usage: bash cache.sh [flush|dump]"
+        echo ""
+        echo "  flush              Flush entire cache"
+        echo "  flush <domain>     Flush specific domain"
+        echo "  dump               Dump cache contents"
         ;;
 esac
