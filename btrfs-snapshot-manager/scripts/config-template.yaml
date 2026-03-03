@@ -1,0 +1,35 @@
+# BTRFS Snapshot Manager Configuration
+# Copy this file: cp config-template.yaml config.yaml
+# Then edit with your subvolumes and preferences
+
+subvolumes:
+  - path: /home
+    snapshot_dir: /home/.snapshots
+    schedule:
+      hourly: true
+      daily: true
+      weekly: true
+      monthly: true
+    retention:
+      hourly: 24      # Keep last 24 hourly snapshots
+      daily: 7        # Keep last 7 daily snapshots
+      weekly: 4       # Keep last 4 weekly snapshots
+      monthly: 6      # Keep last 6 monthly snapshots
+    pre_snapshot_cmd: ""
+    post_snapshot_cmd: ""
+
+  # Example: Add more subvolumes
+  # - path: /var/log
+  #   snapshot_dir: /var/log/.snapshots
+  #   schedule:
+  #     daily: true
+  #   retention:
+  #     daily: 14
+
+# Alert configuration (optional)
+alerts:
+  on_failure: true
+  method: telegram
+  # Set these as environment variables:
+  # export TELEGRAM_BOT_TOKEN="your-token"
+  # export TELEGRAM_CHAT_ID="your-chat-id"
