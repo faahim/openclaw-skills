@@ -1,0 +1,24 @@
+# vnstat-traffic Configuration
+# Copy to ~/.config/vnstat-traffic/config.yaml
+
+interfaces:
+  - name: eth0
+    data_cap:
+      monthly: 500    # GiB per month
+      daily: 25       # GiB per day
+    alerts:
+      - type: telegram
+        bot_token: "${TELEGRAM_BOT_TOKEN}"
+        chat_id: "${TELEGRAM_CHAT_ID}"
+      # - type: webhook
+      #   url: "https://hooks.slack.com/services/..."
+    thresholds:
+      - percent: 80
+        message: "⚠️ 80% of monthly data cap used"
+      - percent: 95
+        message: "🚨 95% of monthly data cap — throttling imminent!"
+
+schedule:
+  daily_report: "08:00"     # Send daily summary at this time
+  monthly_report: "1st"     # Send monthly summary on 1st of month
+  check_interval: 3600      # Check caps every N seconds
