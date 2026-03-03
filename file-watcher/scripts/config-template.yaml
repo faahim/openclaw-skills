@@ -1,0 +1,30 @@
+# File Watcher Configuration
+# Each watcher monitors a directory and triggers an action on changes.
+
+watchers:
+  - name: "downloads-sorter"
+    dir: ~/Downloads
+    events: [create, moved_to]
+    recursive: false
+    action: 'bash scripts/actions/sort-by-extension.sh "$WATCH_FILE"'
+
+  - name: "config-reloader"
+    dir: /etc/nginx/conf.d
+    events: [modify, create, delete]
+    recursive: true
+    filter: '\.conf$'
+    exclude: '\.swp$|~$'
+    debounce: 5
+    action: 'sudo nginx -t && sudo systemctl reload nginx'
+
+  - name: "log-compressor"
+    dir: /var/log/myapp
+    events: [create]
+    filter: '\.log$'
+    debounce: 10
+    action: 'gzip -9 "$WATCH_FILE"'
+
+# Global settings
+settings:
+  log_file: /var/log/file-watcher.log
+  max_log_size: 10M
