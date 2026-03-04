@@ -1,0 +1,321 @@
+#!/bin/bash
+# OpenVPN Manager — Server Installation Script
+# Installs OpenVPN, generates PKI, configures server, sets up firewall.
+set -euo pipefail
+
+# ─── Defaults ───────────────────────────────────────────────────────
+OVPN_PORT="${OVPN_PORT:-1194}"
+OVPN_PROTO="${OVPN_PROTO:-udp}"
+OVPN_SUBNET="${OVPN_SUBNET:-10.8.0.0}"
+OVPN_MASK="255.255.255.0"
+OVPN_DNS="${OVPN_DNS:-1.1.1.1}"
+OVPN_DNS2="${OVPN_DNS2:-1.0.0.1}"
+OVPN_CERT_DAYS="${OVPN_CERT_DAYS:-730}"
+OVPN_DIR="/etc/openvpn"
+EASYRSA_DIR="/etc/openvpn/easy-rsa"
+SERVER_NAME="${OVPN_SERVER_NAME:-server}"
+NO_REDIRECT=false
+FIX_FIREWALL=false
+
+# ─── Parse Args ─────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --port) OVPN_PORT="$2"; shift 2 ;;
+    --proto) OVPN_PROTO="$2"; shift 2 ;;
+    --name) SERVER_NAME="$2"; shift 2 ;;
+    --no-redirect) NO_REDIRECT=true; shift ;;
+    --fix-firewall) FIX_FIREWALL=true; shift ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
+
+# ─── Helpers ────────────────────────────────────────────────────────
+log() { echo -e "\033[1;32m[OpenVPN]\033[0m $*"; }
+warn() { echo -e "\033[1;33m[WARN]\033[0m $*"; }
+err() { echo -e "\033[1;31m[ERROR]\033[0m $*" >&2; exit 1; }
+
+check_root() {
+  [[ $EUID -eq 0 ]] || err "This script must be run as root (use sudo)"
+}
+
+detect_os() {
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS="$ID"
+    OS_VERSION="$VERSION_ID"
+  else
+    err "Cannot detect OS. /etc/os-release not found."
+  fi
+}
+
+get_public_ip() {
+  PUBLIC_IP=$(curl -4 -s --max-time 5 https://ifconfig.me || \
+              curl -4 -s --max-time 5 https://api.ipify.org || \
+              curl -4 -s --max-time 5 https://ipecho.net/plain || \
+              echo "YOUR_SERVER_IP")
+  log "Detected public IP: $PUBLIC_IP"
+}
+
+get_interface() {
+  IFACE=$(ip -4 route show default | awk '{print $5}' | head -1)
+  [[ -n "$IFACE" ]] || err "Cannot detect default network interface"
+  log "Network interface: $IFACE"
+}
+
+# ─── Install Packages ──────────────────────────────────────────────
+install_packages() {
+  log "Installing OpenVPN and Easy-RSA..."
+  case $OS in
+    ubuntu|debian)
+      apt-get update -qq
+      apt-get install -y -qq openvpn easy-rsa iptables
+      ;;
+    centos|rocky|almalinux|rhel)
+      if [[ "$OS_VERSION" == 8* ]] || [[ "$OS_VERSION" == 9* ]]; then
+        dnf install -y -q epel-release
+        dnf install -y -q openvpn easy-rsa iptables-services
+      else
+        yum install -y -q epel-release
+        yum install -y -q openvpn easy-rsa iptables-services
+      fi
+      ;;
+    amzn)
+      amazon-linux-extras install -y epel
+      yum install -y -q openvpn easy-rsa iptables-services
+      ;;
+    arch|manjaro)
+      pacman -Sy --noconfirm openvpn easy-rsa
+      ;;
+    *)
+      err "Unsupported OS: $OS. Install openvpn and easy-rsa manually."
+      ;;
+  esac
+  log "✅ Packages installed"
+}
+
+# ─── Setup PKI ──────────────────────────────────────────────────────
+setup_pki() {
+  log "Setting up PKI with Easy-RSA..."
+  
+  # Find easy-rsa
+  EASYRSA_BIN=""
+  for path in /usr/share/easy-rsa /usr/share/easy-rsa/3 /usr/local/share/easy-rsa; do
+    [[ -d "$path" ]] && EASYRSA_BIN="$path" && break
+  done
+  [[ -n "$EASYRSA_BIN" ]] || err "easy-rsa not found"
+  
+  mkdir -p "$EASYRSA_DIR"
+  cp -r "$EASYRSA_BIN"/* "$EASYRSA_DIR"/
+  cd "$EASYRSA_DIR"
+  
+  # Init PKI
+  ./easyrsa --batch init-pki
+  
+  # Build CA (no password)
+  ./easyrsa --batch --req-cn="OpenVPN-CA" build-ca nopass
+  
+  # Generate server cert
+  ./easyrsa --batch --days="$OVPN_CERT_DAYS" build-server-full "$SERVER_NAME" nopass
+  
+  # Generate DH parameters
+  log "Generating DH parameters (this may take a minute)..."
+  ./easyrsa --batch gen-dh
+  
+  # Generate TLS-Crypt key
+  openvpn --genkey secret "$OVPN_DIR/ta.key"
+  
+  # Generate CRL
+  ./easyrsa --batch gen-crl
+  
+  # Copy certs to openvpn dir
+  cp pki/ca.crt "$OVPN_DIR/"
+  cp "pki/issued/${SERVER_NAME}.crt" "$OVPN_DIR/"
+  cp "pki/private/${SERVER_NAME}.key" "$OVPN_DIR/"
+  cp pki/dh.pem "$OVPN_DIR/"
+  cp pki/crl.pem "$OVPN_DIR/"
+  
+  chmod 600 "$OVPN_DIR"/*.key
+  chmod 644 "$OVPN_DIR"/crl.pem
+  
+  log "✅ PKI initialized"
+}
+
+# ─── Configure Server ──────────────────────────────────────────────
+configure_server() {
+  log "Configuring OpenVPN server..."
+  
+  cat > "$OVPN_DIR/server.conf" << EOF
+# OpenVPN Server Configuration
+# Generated by OpenVPN Manager — $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+port $OVPN_PORT
+proto $OVPN_PROTO
+dev tun
+topology subnet
+
+ca ca.crt
+cert ${SERVER_NAME}.crt
+key ${SERVER_NAME}.key
+dh dh.pem
+tls-crypt ta.key
+crl-verify crl.pem
+
+server $OVPN_SUBNET $OVPN_MASK
+ifconfig-pool-persist /var/log/openvpn/ipp.txt
+
+$(if [ "$NO_REDIRECT" = false ]; then
+echo 'push "redirect-gateway def1 bypass-dhcp"'
+fi)
+push "dhcp-option DNS $OVPN_DNS"
+push "dhcp-option DNS $OVPN_DNS2"
+
+keepalive 10 120
+cipher AES-256-GCM
+auth SHA256
+max-clients 100
+
+user nobody
+group nogroup
+persist-key
+persist-tun
+
+status /var/log/openvpn/status.log
+log-append /var/log/openvpn/openvpn.log
+verb 3
+mute 20
+
+explicit-exit-notify $([ "$OVPN_PROTO" = "udp" ] && echo "1" || echo "0")
+EOF
+
+  mkdir -p /var/log/openvpn
+  mkdir -p "$OVPN_DIR/clients"
+  
+  log "✅ Server configured"
+}
+
+# ─── Firewall & IP Forwarding ──────────────────────────────────────
+configure_firewall() {
+  log "Configuring firewall and IP forwarding..."
+  
+  # Enable IP forwarding
+  sed -i '/^#net.ipv4.ip_forward/s/^#//' /etc/sysctl.conf
+  grep -q "^net.ipv4.ip_forward" /etc/sysctl.conf || \
+    echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+  sysctl -p /etc/sysctl.conf >/dev/null 2>&1
+  
+  # NAT masquerade
+  iptables -t nat -C POSTROUTING -s "${OVPN_SUBNET}/24" -o "$IFACE" -j MASQUERADE 2>/dev/null || \
+    iptables -t nat -A POSTROUTING -s "${OVPN_SUBNET}/24" -o "$IFACE" -j MASQUERADE
+  
+  # Allow VPN traffic
+  iptables -C INPUT -p "$OVPN_PROTO" --dport "$OVPN_PORT" -j ACCEPT 2>/dev/null || \
+    iptables -A INPUT -p "$OVPN_PROTO" --dport "$OVPN_PORT" -j ACCEPT
+  
+  iptables -C FORWARD -s "${OVPN_SUBNET}/24" -j ACCEPT 2>/dev/null || \
+    iptables -A FORWARD -s "${OVPN_SUBNET}/24" -j ACCEPT
+  
+  iptables -C FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+    iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+  
+  # Persist iptables rules
+  if command -v netfilter-persistent &>/dev/null; then
+    netfilter-persistent save
+  elif command -v iptables-save &>/dev/null; then
+    iptables-save > /etc/iptables/rules.v4 2>/dev/null || \
+    iptables-save > /etc/sysconfig/iptables 2>/dev/null || true
+  fi
+  
+  # Check for ufw and add rule
+  if command -v ufw &>/dev/null && ufw status | grep -q "active"; then
+    ufw allow "$OVPN_PORT/$OVPN_PROTO" >/dev/null 2>&1
+    # Enable forwarding in ufw
+    sed -i 's/DEFAULT_FORWARD_POLICY="DROP"/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw 2>/dev/null || true
+    ufw reload >/dev/null 2>&1
+  fi
+  
+  log "✅ Firewall configured"
+}
+
+# ─── Start Service ──────────────────────────────────────────────────
+start_service() {
+  log "Starting OpenVPN service..."
+  
+  systemctl enable "openvpn@${SERVER_NAME}" 2>/dev/null || \
+    systemctl enable openvpn-server@${SERVER_NAME} 2>/dev/null || true
+  
+  systemctl start "openvpn@${SERVER_NAME}" 2>/dev/null || \
+    systemctl start "openvpn-server@${SERVER_NAME}" 2>/dev/null || \
+    err "Failed to start OpenVPN service"
+  
+  sleep 2
+  
+  if systemctl is-active --quiet "openvpn@${SERVER_NAME}" 2>/dev/null || \
+     systemctl is-active --quiet "openvpn-server@${SERVER_NAME}" 2>/dev/null; then
+    log "✅ OpenVPN service running"
+  else
+    err "OpenVPN service failed to start. Check: journalctl -u openvpn@${SERVER_NAME}"
+  fi
+}
+
+# ─── Save metadata ─────────────────────────────────────────────────
+save_metadata() {
+  cat > "$OVPN_DIR/.ovpn-manager.conf" << EOF
+PUBLIC_IP=$PUBLIC_IP
+PORT=$OVPN_PORT
+PROTO=$OVPN_PROTO
+SUBNET=$OVPN_SUBNET
+DNS=$OVPN_DNS
+DNS2=$OVPN_DNS2
+SERVER_NAME=$SERVER_NAME
+CERT_DAYS=$OVPN_CERT_DAYS
+EASYRSA_DIR=$EASYRSA_DIR
+INSTALLED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+EOF
+  chmod 600 "$OVPN_DIR/.ovpn-manager.conf"
+}
+
+# ─── Main ───────────────────────────────────────────────────────────
+main() {
+  check_root
+  
+  if [ "$FIX_FIREWALL" = true ]; then
+    detect_os
+    get_public_ip
+    get_interface
+    configure_firewall
+    log "✅ Firewall rules re-applied"
+    exit 0
+  fi
+  
+  if [ -f "$OVPN_DIR/.ovpn-manager.conf" ]; then
+    warn "OpenVPN is already installed. To reinstall, remove $OVPN_DIR/.ovpn-manager.conf first."
+    exit 1
+  fi
+  
+  detect_os
+  get_public_ip
+  get_interface
+  
+  install_packages
+  setup_pki
+  configure_server
+  configure_firewall
+  start_service
+  save_metadata
+  
+  echo ""
+  echo "═══════════════════════════════════════════════"
+  echo "  ✅ OpenVPN Server Installed Successfully!"
+  echo "═══════════════════════════════════════════════"
+  echo ""
+  echo "  Server:    $PUBLIC_IP:$OVPN_PORT ($OVPN_PROTO)"
+  echo "  Subnet:    $OVPN_SUBNET/24"
+  echo "  DNS:       $OVPN_DNS, $OVPN_DNS2"
+  echo "  Cipher:    AES-256-GCM"
+  echo ""
+  echo "  Next: Create a client config:"
+  echo "    sudo bash scripts/client.sh add <username>"
+  echo ""
+}
+
+main "$@"
