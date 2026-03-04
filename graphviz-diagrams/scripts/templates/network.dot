@@ -1,0 +1,9 @@
+// Network topology diagram — var: nodes (comma-separated)
+digraph network {
+  rankdir=TB
+  node [shape=box3d style=filled fontname="Arial" fontsize=11 fillcolor="#e0e7ff"]
+  edge [fontname="Arial" fontsize=9 color="#64748b"]
+  
+  internet [label="Internet" shape=cloud fillcolor="#fecaca"]
+  {{nodes}}
+}

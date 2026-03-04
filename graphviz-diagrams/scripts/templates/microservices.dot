@@ -1,0 +1,26 @@
+// Microservices architecture diagram — var: services (comma-separated)
+digraph microservices {
+  rankdir=TB
+  node [shape=box style="filled,rounded" fontname="Arial" fontsize=11]
+  edge [fontname="Arial" fontsize=9 color="#64748b"]
+  
+  subgraph cluster_gateway {
+    label="API Layer" style=filled fillcolor="#eff6ff"
+    gateway [label="API Gateway" fillcolor="#93c5fd" penwidth=2]
+  }
+  
+  subgraph cluster_services {
+    label="Services" style=filled fillcolor="#f0fdf4"
+    {{services}}
+  }
+  
+  subgraph cluster_data {
+    label="Data" style=filled fillcolor="#fefce8"
+    db [label="Database" shape=cylinder fillcolor="#fde68a"]
+    cache [label="Cache" shape=cylinder fillcolor="#fde68a"]
+    queue [label="Message Queue" shape=cylinder fillcolor="#fde68a"]
+  }
+  
+  client [label="Client" shape=oval fillcolor="#e2e8f0"]
+  client -> gateway [label="HTTPS"]
+}
