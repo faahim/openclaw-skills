@@ -1,303 +1,185 @@
 #!/bin/bash
-# Static Site Deployer — Deploy to GitHub Pages, Netlify, Cloudflare Pages, or Surge
-# Usage: bash deploy.sh --provider <provider> --dir <directory> [options]
+# Static Site Deployer — Deploy to Cloudflare Pages, Netlify, or Vercel
+set -e
 
-set -euo pipefail
-
-# === Defaults ===
+# Defaults
 PROVIDER=""
 DIR=""
-SITE_NAME=""
-DOMAIN=""
-BRANCH="gh-pages"
-REPO="origin"
-PROJECT_NAME=""
-DRAFT=false
+PROJECT=""
+SITE=""
+BRANCH=""
 PROD=false
-TEARDOWN=false
-LIST=false
-BUILD_CMD=""
-CONFIG_FILE=""
-PROVIDERS=()
+CONFIG=""
 
-# === Colors ===
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
+usage() {
+  cat <<EOF
+Usage: bash scripts/deploy.sh --provider <cf|netlify|vercel> --dir <path> [options]
 
-log_info()  { echo -e "${BLUE}ℹ️  $1${NC}"; }
-log_ok()    { echo -e "${GREEN}✅ $1${NC}"; }
-log_warn()  { echo -e "${YELLOW}⚠️  $1${NC}"; }
-log_error() { echo -e "${RED}❌ $1${NC}" >&2; }
+Options:
+  --provider, -p   Provider: cloudflare (cf), netlify, vercel
+  --dir, -d        Directory to deploy (e.g., ./dist, ./build, ./out)
+  --project        Project name (Cloudflare Pages)
+  --site           Site name (Netlify)
+  --branch, -b     Branch name (affects preview vs production on CF)
+  --prod           Deploy to production (Netlify/Vercel)
+  --config         Path to deploy.yaml config file
 
-# === Argument Parsing ===
+Examples:
+  bash scripts/deploy.sh --provider cloudflare --dir ./dist --project my-site
+  bash scripts/deploy.sh --provider netlify --dir ./build --site my-app --prod
+  bash scripts/deploy.sh --provider vercel --dir ./out --prod
+EOF
+  exit 1
+}
+
+# Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --provider)    PROVIDER="$2"; shift 2 ;;
-    --dir)         DIR="$2"; shift 2 ;;
-    --site-name)   SITE_NAME="$2"; shift 2 ;;
-    --domain)      DOMAIN="$2"; shift 2 ;;
-    --branch)      BRANCH="$2"; shift 2 ;;
-    --repo)        REPO="$2"; shift 2 ;;
-    --project-name) PROJECT_NAME="$2"; shift 2 ;;
-    --draft)       DRAFT=true; shift ;;
-    --prod)        PROD=true; shift ;;
-    --teardown)    TEARDOWN=true; shift ;;
-    --list)        LIST=true; shift ;;
-    --build)       BUILD_CMD="$2"; shift 2 ;;
-    --config)      CONFIG_FILE="$2"; shift 2 ;;
-    -h|--help)     show_help; exit 0 ;;
-    *) log_error "Unknown option: $1"; exit 1 ;;
+    --provider|-p) PROVIDER="$2"; shift 2 ;;
+    --dir|-d) DIR="$2"; shift 2 ;;
+    --project) PROJECT="$2"; shift 2 ;;
+    --site) SITE="$2"; shift 2 ;;
+    --branch|-b) BRANCH="$2"; shift 2 ;;
+    --prod) PROD=true; shift ;;
+    --config) CONFIG="$2"; shift 2 ;;
+    *) echo "Unknown option: $1"; usage ;;
   esac
 done
 
-# === Config File Support ===
-load_config() {
-  if [[ -n "$CONFIG_FILE" && -f "$CONFIG_FILE" ]]; then
-    log_info "Loading config from $CONFIG_FILE"
-    # Simple YAML parser for flat keys
-    if command -v yq &>/dev/null; then
-      [[ -z "$PROVIDER" ]] && PROVIDER=$(yq -r '.default_provider // ""' "$CONFIG_FILE")
-      [[ -z "$DIR" ]] && DIR=$(yq -r '.default_dir // ""' "$CONFIG_FILE")
-    else
-      log_warn "yq not installed — config file requires yq. Using CLI args only."
-    fi
-  fi
-}
+# Parse YAML config if provided (basic key: value parsing)
+if [[ -n "$CONFIG" && -f "$CONFIG" ]]; then
+  [[ -z "$PROVIDER" ]] && PROVIDER=$(grep -E '^provider:' "$CONFIG" | awk '{print $2}' | tr -d '"' || true)
+  [[ -z "$DIR" ]] && DIR=$(grep -E '^directory:' "$CONFIG" | awk '{print $2}' | tr -d '"' || true)
+  [[ -z "$PROJECT" ]] && PROJECT=$(grep -E '^project:' "$CONFIG" | awk '{print $2}' | tr -d '"' || true)
+  [[ -z "$SITE" ]] && SITE=$(grep -E '^site:' "$CONFIG" | awk '{print $2}' | tr -d '"' || true)
+  [[ -z "$BRANCH" ]] && BRANCH=$(grep -E '^branch:' "$CONFIG" | awk '{print $2}' | tr -d '"' || true)
+fi
 
-load_config
+# Validate
+[[ -z "$PROVIDER" ]] && echo "❌ --provider is required" && usage
+[[ -z "$DIR" ]] && echo "❌ --dir is required" && usage
 
-# === Validation ===
-if [[ -z "$PROVIDER" ]]; then
-  log_error "Missing --provider. Options: surge, netlify, cloudflare, github-pages"
+# Normalize provider name
+case "$PROVIDER" in
+  cloudflare|cf) PROVIDER="cloudflare" ;;
+  netlify) PROVIDER="netlify" ;;
+  vercel) PROVIDER="vercel" ;;
+  *) echo "❌ Unknown provider: $PROVIDER (use cloudflare, netlify, or vercel)" && exit 1 ;;
+esac
+
+# Validate directory
+if [[ ! -d "$DIR" ]]; then
+  echo "❌ Directory not found: $DIR"
+  echo "   Make sure you've built your site first (e.g., npm run build)"
   exit 1
 fi
 
-# Split comma-separated providers
-IFS=',' read -ra PROVIDERS <<< "$PROVIDER"
+FILE_COUNT=$(find "$DIR" -type f | wc -l)
+DIR_SIZE=$(du -sh "$DIR" 2>/dev/null | cut -f1)
 
-if [[ "$TEARDOWN" == false && "$LIST" == false && -z "$DIR" ]]; then
-  log_error "Missing --dir. Specify the directory to deploy."
+if [[ "$FILE_COUNT" -eq 0 ]]; then
+  echo "❌ Directory is empty: $DIR"
   exit 1
 fi
 
-if [[ -n "$DIR" && ! -d "$DIR" ]]; then
-  log_error "Directory not found: $DIR"
-  exit 1
-fi
+echo "🚀 Deploying to ${PROVIDER^}..."
+echo "   Directory: $DIR ($FILE_COUNT files, $DIR_SIZE)"
 
-# === Pre-deploy Build ===
-if [[ -n "$BUILD_CMD" ]]; then
-  log_info "Running build: $BUILD_CMD"
-  eval "$BUILD_CMD"
-  log_ok "Build complete"
-fi
+START_TIME=$(date +%s)
 
-# === Deploy Functions ===
-
-deploy_surge() {
-  local dir="$1"
-  log_info "Deploying $dir to Surge..."
-
-  if ! command -v surge &>/dev/null; then
-    log_error "surge not installed. Run: npm install -g surge"
-    return 1
-  fi
-
-  if [[ "$TEARDOWN" == true ]]; then
-    if [[ -z "$DOMAIN" ]]; then
-      log_error "--domain required for teardown"
-      return 1
-    fi
-    surge teardown "$DOMAIN"
-    log_ok "Teardown complete: $DOMAIN"
-    return 0
-  fi
-
-  local domain_arg=""
-  if [[ -n "$DOMAIN" ]]; then
-    domain_arg="$DOMAIN"
-  elif [[ -n "$SITE_NAME" ]]; then
-    domain_arg="${SITE_NAME}.surge.sh"
-  fi
-
-  if [[ -n "$domain_arg" ]]; then
-    surge "$dir" "$domain_arg"
-    log_ok "Live at: https://$domain_arg"
-  else
-    surge "$dir"
-    log_ok "Deployed to Surge (see URL above)"
-  fi
-}
-
-deploy_netlify() {
-  local dir="$1"
-  log_info "Deploying $dir to Netlify..."
-
-  if ! command -v netlify &>/dev/null && ! command -v npx &>/dev/null; then
-    log_error "netlify-cli not installed. Run: npm install -g netlify-cli"
-    return 1
-  fi
-
-  local cli="netlify"
-  if ! command -v netlify &>/dev/null; then
-    cli="npx netlify-cli"
-  fi
-
-  if [[ -z "${NETLIFY_AUTH_TOKEN:-}" ]]; then
-    log_warn "NETLIFY_AUTH_TOKEN not set. You may be prompted to log in."
-  fi
-
-  if [[ "$LIST" == true ]]; then
-    local site_flag=""
-    [[ -n "$SITE_NAME" ]] && site_flag="--filter $SITE_NAME"
-    $cli api listSiteDeploys --data '{}' $site_flag 2>/dev/null | head -20
-    return 0
-  fi
-
-  if [[ "$TEARDOWN" == true ]]; then
-    if [[ -n "${NETLIFY_SITE_ID:-}" ]]; then
-      $cli api deleteSite --data "{\"site_id\": \"$NETLIFY_SITE_ID\"}"
-    else
-      log_error "Set NETLIFY_SITE_ID to teardown a site"
-      return 1
-    fi
-    log_ok "Site deleted"
-    return 0
-  fi
-
-  local deploy_args="--dir $dir"
-
-  if [[ "$PROD" == true ]]; then
-    deploy_args="$deploy_args --prod"
-  fi
-
-  if [[ -n "$SITE_NAME" ]]; then
-    # Check if site exists; if not, create it
-    local site_id
-    site_id=$($cli api listSites --data '{}' 2>/dev/null | jq -r ".[] | select(.name == \"$SITE_NAME\") | .id" 2>/dev/null || true)
-    if [[ -n "$site_id" ]]; then
-      deploy_args="$deploy_args --site $site_id"
-    else
-      log_info "Creating new site: $SITE_NAME"
-      $cli sites:create --name "$SITE_NAME" 2>/dev/null || true
-      deploy_args="$deploy_args --site $SITE_NAME"
-    fi
-  fi
-
-  $cli deploy $deploy_args
-  log_ok "Deployed to Netlify"
-}
-
+# ============ CLOUDFLARE PAGES ============
 deploy_cloudflare() {
-  local dir="$1"
-  log_info "Deploying $dir to Cloudflare Pages..."
+  local name="${PROJECT:-$(basename "$(pwd)")}"
+  echo "   Project: $name"
 
-  if ! command -v wrangler &>/dev/null && ! command -v npx &>/dev/null; then
-    log_error "wrangler not installed. Run: npm install -g wrangler"
-    return 1
-  fi
-
-  local cli="wrangler"
   if ! command -v wrangler &>/dev/null; then
-    cli="npx wrangler"
+    echo "❌ wrangler not found. Install: bash scripts/install.sh cloudflare"
+    exit 1
   fi
 
-  if [[ -z "${CLOUDFLARE_API_TOKEN:-}" ]]; then
-    log_warn "CLOUDFLARE_API_TOKEN not set. You may be prompted to log in."
-  fi
+  local args=("pages" "deploy" "$DIR" "--project-name" "$name")
+  [[ -n "$BRANCH" ]] && args+=("--branch" "$BRANCH")
+  [[ "$BRANCH" == "main" || "$BRANCH" == "master" || "$PROD" == true ]] && args+=("--branch" "main")
 
-  local project="${PROJECT_NAME:-$SITE_NAME}"
-  if [[ -z "$project" ]]; then
-    log_error "Specify --project-name or --site-name for Cloudflare Pages"
-    return 1
-  fi
+  echo "   Branch: ${BRANCH:-main} ($( [[ "$PROD" == true || "$BRANCH" == "main" || -z "$BRANCH" ]] && echo 'production' || echo 'preview'))"
+  echo ""
 
-  # Create project if it doesn't exist
-  $cli pages project list 2>/dev/null | grep -q "$project" || {
-    log_info "Creating Cloudflare Pages project: $project"
-    $cli pages project create "$project" --production-branch main 2>/dev/null || true
-  }
+  npx wrangler "${args[@]}" 2>&1 | tee /tmp/ssd-deploy-output.txt
 
-  $cli pages deploy "$dir" --project-name "$project"
-  log_ok "Live at: https://${project}.pages.dev"
+  local url
+  url=$(grep -oP 'https://[^\s]+\.pages\.dev' /tmp/ssd-deploy-output.txt | head -1 || true)
+  rm -f /tmp/ssd-deploy-output.txt
+
+  local elapsed=$(( $(date +%s) - START_TIME ))
+  echo ""
+  echo "✅ Deployed successfully!"
+  [[ -n "$url" ]] && echo "   URL: $url"
+  echo "   Time: ${elapsed}s"
 }
 
-deploy_github_pages() {
-  local dir="$1"
-  log_info "Deploying $dir to GitHub Pages (branch: $BRANCH)..."
+# ============ NETLIFY ============
+deploy_netlify() {
+  local name="${SITE:-$(basename "$(pwd)")}"
+  echo "   Site: $name"
 
-  if ! command -v git &>/dev/null; then
-    log_error "git not installed"
-    return 1
+  if ! command -v netlify &>/dev/null; then
+    echo "❌ netlify-cli not found. Install: bash scripts/install.sh netlify"
+    exit 1
   fi
 
-  # Get repo URL for output
-  local repo_url
-  repo_url=$(git remote get-url "$REPO" 2>/dev/null || echo "unknown")
+  local args=("deploy" "--dir" "$DIR")
+  [[ -n "$SITE" ]] && args+=("--site" "$SITE")
+  [[ "$PROD" == true ]] && args+=("--prod")
 
-  # Create a temporary worktree approach
-  local tmp_dir
-  tmp_dir=$(mktemp -d)
+  echo "   Production: $PROD"
+  echo ""
 
-  # Initialize a git repo in temp dir
-  cd "$tmp_dir"
-  git init -q
-  git checkout -q --orphan "$BRANCH"
+  npx netlify "${args[@]}" 2>&1 | tee /tmp/ssd-deploy-output.txt
 
-  # Copy files
-  cp -r "$OLDPWD/$dir"/* . 2>/dev/null || cp -r "$OLDPWD/$dir"/. . 2>/dev/null
+  local url
+  url=$(grep -oP 'https://[^\s]+\.netlify\.app' /tmp/ssd-deploy-output.txt | head -1 || true)
+  [[ -z "$url" ]] && url=$(grep -oP 'Website URL:\s+\Khttps://[^\s]+' /tmp/ssd-deploy-output.txt | head -1 || true)
+  rm -f /tmp/ssd-deploy-output.txt
 
-  # Add .nojekyll for non-Jekyll sites
-  touch .nojekyll
-
-  git add -A
-  git commit -q -m "Deploy static site $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-  # Push to remote
-  cd "$OLDPWD"
-  git push "$REPO" "$tmp_dir:refs/heads/$BRANCH" --force 2>/dev/null || {
-    # Alternative: push from temp dir
-    cd "$tmp_dir"
-    git remote add deploy "$repo_url"
-    git push deploy "$BRANCH" --force
-    cd "$OLDPWD"
-  }
-
-  # Cleanup
-  rm -rf "$tmp_dir"
-
-  # Extract GitHub Pages URL
-  local pages_url
-  if [[ "$repo_url" =~ github\.com[:/]([^/]+)/([^/.]+) ]]; then
-    local owner="${BASH_REMATCH[1]}"
-    local repo="${BASH_REMATCH[2]}"
-    pages_url="https://${owner}.github.io/${repo}"
-  else
-    pages_url="(check repo Settings → Pages)"
-  fi
-
-  log_ok "Pushed to branch '$BRANCH'. Live at: $pages_url"
-  log_info "Note: GitHub Pages may take 1-2 minutes to update"
+  local elapsed=$(( $(date +%s) - START_TIME ))
+  echo ""
+  echo "✅ Deployed successfully!"
+  [[ -n "$url" ]] && echo "   URL: $url"
+  echo "   Time: ${elapsed}s"
 }
 
-# === Main Execution ===
+# ============ VERCEL ============
+deploy_vercel() {
+  echo "   Production: $PROD"
 
-for p in "${PROVIDERS[@]}"; do
-  p=$(echo "$p" | xargs)  # trim whitespace
-  case "$p" in
-    surge)         deploy_surge "$DIR" ;;
-    netlify)       deploy_netlify "$DIR" ;;
-    cloudflare)    deploy_cloudflare "$DIR" ;;
-    github-pages)  deploy_github_pages "$DIR" ;;
-    *)
-      log_error "Unknown provider: $p"
-      log_info "Available: surge, netlify, cloudflare, github-pages"
-      exit 1
-      ;;
-  esac
-done
+  if ! command -v vercel &>/dev/null; then
+    echo "❌ vercel CLI not found. Install: bash scripts/install.sh vercel"
+    exit 1
+  fi
 
-log_ok "All deployments complete! 🎉"
+  local args=("deploy" "$DIR")
+  [[ "$PROD" == true ]] && args+=("--prod")
+  [[ -n "$VERCEL_TOKEN" ]] && args+=("--token" "$VERCEL_TOKEN")
+  args+=("--yes")  # Skip confirmation prompts
+
+  echo ""
+
+  npx vercel "${args[@]}" 2>&1 | tee /tmp/ssd-deploy-output.txt
+
+  local url
+  url=$(grep -oP 'https://[^\s]+\.vercel\.app' /tmp/ssd-deploy-output.txt | head -1 || true)
+  rm -f /tmp/ssd-deploy-output.txt
+
+  local elapsed=$(( $(date +%s) - START_TIME ))
+  echo ""
+  echo "✅ Deployed successfully!"
+  [[ -n "$url" ]] && echo "   URL: $url"
+  echo "   Time: ${elapsed}s"
+}
+
+# Dispatch
+case "$PROVIDER" in
+  cloudflare) deploy_cloudflare ;;
+  netlify) deploy_netlify ;;
+  vercel) deploy_vercel ;;
+esac

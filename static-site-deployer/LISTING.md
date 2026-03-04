@@ -5,49 +5,63 @@
 - **Name:** static-site-deployer
 - **Display Name:** Static Site Deployer
 - **Categories:** [dev-tools, automation]
-- **Price:** $8
-- **Dependencies:** [bash, curl, git, npm]
+- **Icon:** 🚀
+- **Price:** $10
+- **Dependencies:** [bash, node, npm]
 
 ## Tagline
 
-Deploy static sites to Netlify, Surge, Cloudflare Pages, or GitHub Pages in one command
+Deploy static sites to Cloudflare Pages, Netlify, or Vercel in one command
 
 ## Description
 
-Deploying a static site shouldn't require clicking through three dashboards and remembering provider-specific commands. Whether it's a React build, Hugo output, docs folder, or plain HTML — you just want it live.
+Deploying a static site shouldn't require memorizing three different CLI syntaxes. Whether you use Cloudflare Pages, Netlify, or Vercel, it's the same frustrating dance: install the CLI, authenticate, figure out the right flags, set up the project, and hope the deploy works.
 
-Static Site Deployer gives your OpenClaw agent a single unified command that works across all major static hosting platforms. Point it at a directory, pick a provider, and get a live URL in seconds. Supports draft previews, production deploys, multi-platform deploys, teardowns, and CI/CD integration.
+**Static Site Deployer** gives your OpenClaw agent a unified interface for all three major hosting providers. One command deploys your `./dist`, `./build`, or `./out` folder to any provider. It handles CLI installation, project auto-creation, preview vs production deploys, environment variables, custom domains, and rollbacks.
 
 **What it does:**
-- 🚀 One-command deploy to Surge, Netlify, Cloudflare Pages, or GitHub Pages
-- 🔄 Multi-provider deploy (same build → multiple platforms)
-- 👀 Draft/preview deploys before going live (Netlify)
-- 🏗️ Pre-deploy build hooks (`--build "npm run build"`)
-- 🗑️ Teardown/delete deployments
-- 📋 List recent deployments
-- ⚙️ Config file support for repeatable deploys
-- 🤖 CI/CD ready — works headless with environment variables
+- 🚀 One-command deploy to Cloudflare Pages, Netlify, or Vercel
+- 📦 Auto-installs provider CLIs (wrangler, netlify-cli, vercel)
+- 🌐 Custom domain setup with DNS instructions
+- 🔄 Preview deployments for branches/PRs
+- 🔑 Environment variable management across providers
+- ⏪ Rollback to previous deployments
+- 🔨 Build + deploy pipeline (git pull → build → deploy)
+- 📋 List and compare recent deployments
 
-Perfect for developers, indie hackers, and anyone who ships static sites and wants deployment automated without vendor lock-in.
+Perfect for developers and indie hackers who ship frequently and want their AI agent to handle deploys without context-switching between provider dashboards.
+
+## Quick Start Preview
+
+```bash
+# Install provider CLI
+bash scripts/install.sh cloudflare
+
+# Deploy in one command
+bash scripts/deploy.sh --provider cloudflare --dir ./dist --project my-site
+
+# Output:
+# 🚀 Deploying to Cloudflare Pages...
+# ✅ Deployed! URL: https://my-site.pages.dev (12s)
+```
 
 ## Core Capabilities
 
-1. Surge deployment — Instant deploy, no account needed for first try
-2. Netlify deployment — Draft previews + production deploys via CLI
-3. Cloudflare Pages — Deploy to the global edge network
-4. GitHub Pages — Push to gh-pages branch automatically
-5. Multi-provider — Deploy to multiple platforms in one command
-6. Build hooks — Run build commands before deploying
-7. Config files — YAML config for repeatable deployments
-8. Teardown — Remove deployments cleanly
-9. Idempotent — Re-run to update, won't create duplicates
-10. Provider-agnostic — Same interface regardless of hosting platform
+1. Multi-provider support — Cloudflare Pages, Netlify, Vercel with identical interface
+2. One-command deploy — `deploy.sh --provider cf --dir ./dist --project my-site`
+3. Auto-install — Installs provider CLIs if missing
+4. Preview deploys — Branch-based previews without touching production
+5. Build pipeline — Git pull + build + deploy in one step
+6. Env management — Set/list/delete environment variables per provider
+7. Custom domains — Add domains with DNS setup instructions
+8. Rollback — Revert to previous deployment
+9. Config file — Optional YAML config for repeated deploys
+10. CI/CD ready — Works with OpenClaw cron for scheduled deploys
 
 ## Dependencies
 - `bash` (4.0+)
-- `git`
-- `npm` / `npx`
-- Provider CLIs installed per-use: `surge`, `netlify-cli`, `wrangler`
+- `node` (18+) and `npm`
+- `curl`
 
 ## Installation Time
-**5 minutes** — Install provider CLI, set token, deploy
+**5 minutes** — Install CLI, authenticate, deploy

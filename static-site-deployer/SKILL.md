@@ -1,150 +1,175 @@
 ---
 name: static-site-deployer
 description: >-
-  Deploy static sites to GitHub Pages, Netlify, Cloudflare Pages, or Surge with one command.
+  Deploy static sites to Cloudflare Pages, Netlify, or Vercel from the terminal in one command.
 categories: [dev-tools, automation]
-dependencies: [bash, curl, git]
+dependencies: [bash, curl, node]
 ---
 
 # Static Site Deployer
 
 ## What This Does
 
-Deploy any static site (HTML, React build, Hugo output, docs) to popular hosting platforms with a single command. Supports GitHub Pages, Netlify, Cloudflare Pages, and Surge.sh — no clicking through dashboards.
+Deploy any static site (HTML, React, Vue, Hugo, Astro, etc.) to **Cloudflare Pages**, **Netlify**, or **Vercel** with a single command. Handles CLI installation, project setup, environment variables, and production/preview deployments.
 
-**Example:** "Deploy my `./dist` folder to Netlify and get a live URL in 30 seconds."
+**Example:** "Deploy my `./dist` folder to Cloudflare Pages as `my-portfolio`, set up custom domain, and get a live URL in 30 seconds."
 
 ## Quick Start (5 minutes)
 
-### 1. Install Dependencies
+### 1. Install a Provider CLI
 
 ```bash
-# Install the deploy script
-chmod +x scripts/deploy.sh
-
-# For Surge (simplest — no account needed for first deploy):
-npm install -g surge
-
-# For Netlify:
-npm install -g netlify-cli
-
-# For Cloudflare Pages (wrangler):
-npm install -g wrangler
-
-# GitHub Pages needs only git (already installed)
+# Pick one (or install all):
+bash scripts/install.sh cloudflare   # Installs wrangler
+bash scripts/install.sh netlify      # Installs netlify-cli
+bash scripts/install.sh vercel       # Installs vercel CLI
 ```
 
-### 2. Deploy to Surge (Fastest)
+### 2. Authenticate
 
 ```bash
-# Deploy any directory — get a URL instantly
-bash scripts/deploy.sh --provider surge --dir ./dist
+# Cloudflare Pages
+npx wrangler login
+# — OR set token —
+export CLOUDFLARE_API_TOKEN="<your-token>"
+export CLOUDFLARE_ACCOUNT_ID="<your-account-id>"
 
-# Output:
-# 🚀 Deploying ./dist to Surge...
-# ✅ Live at: https://random-name.surge.sh
+# Netlify
+npx netlify login
+# — OR —
+export NETLIFY_AUTH_TOKEN="<your-token>"
+
+# Vercel
+npx vercel login
+# — OR —
+export VERCEL_TOKEN="<your-token>"
 ```
 
-### 3. Deploy to Netlify
+### 3. Deploy
 
 ```bash
-# Set token (one-time)
-export NETLIFY_AUTH_TOKEN="your-token-here"
+# Deploy ./dist to Cloudflare Pages
+bash scripts/deploy.sh --provider cloudflare --dir ./dist --project my-site
 
-# Deploy
-bash scripts/deploy.sh --provider netlify --dir ./build --site-name my-app
+# Deploy ./build to Netlify
+bash scripts/deploy.sh --provider netlify --dir ./build --site my-site
 
-# Output:
-# 🚀 Deploying ./build to Netlify...
-# ✅ Live at: https://my-app.netlify.app
+# Deploy ./out to Vercel (production)
+bash scripts/deploy.sh --provider vercel --dir ./out --prod
 ```
 
 ## Core Workflows
 
-### Workflow 1: Deploy to GitHub Pages
+### Workflow 1: Deploy to Cloudflare Pages
 
-**Use case:** Publish docs or a project site from a build directory
-
-```bash
-bash scripts/deploy.sh \
-  --provider github-pages \
-  --dir ./docs \
-  --repo origin \
-  --branch gh-pages
-
-# Pushes contents of ./docs to the gh-pages branch
-# ✅ Live at: https://username.github.io/repo-name
-```
-
-### Workflow 2: Deploy to Netlify (with draft preview)
-
-**Use case:** Preview a deploy before going live
+**Use case:** Ship a static site to Cloudflare's global CDN
 
 ```bash
-# Draft deploy (preview URL only)
-bash scripts/deploy.sh \
-  --provider netlify \
-  --dir ./dist \
-  --draft
-
-# Output:
-# 🔍 Draft deploy: https://abc123--my-site.netlify.app
-# Run with --prod to publish to production
-```
-
-```bash
-# Production deploy
-bash scripts/deploy.sh \
-  --provider netlify \
-  --dir ./dist \
-  --prod
-```
-
-### Workflow 3: Deploy to Cloudflare Pages
-
-**Use case:** Deploy to Cloudflare's edge network for global performance
-
-```bash
-export CLOUDFLARE_API_TOKEN="your-token"
-export CLOUDFLARE_ACCOUNT_ID="your-account-id"
-
 bash scripts/deploy.sh \
   --provider cloudflare \
   --dir ./dist \
-  --project-name my-project
-
-# ✅ Live at: https://my-project.pages.dev
+  --project my-portfolio \
+  --branch main
 ```
 
-### Workflow 4: Deploy to Surge.sh
+**Output:**
+```
+🚀 Deploying to Cloudflare Pages...
+   Project: my-portfolio
+   Directory: ./dist (42 files, 1.2 MB)
+   Branch: main (production)
 
-**Use case:** Quick throwaway deploys, prototypes, demos
+✅ Deployed successfully!
+   URL: https://my-portfolio.pages.dev
+   Preview: https://abc123.my-portfolio.pages.dev
+   Time: 12s
+```
+
+### Workflow 2: Deploy to Netlify
+
+**Use case:** Quick deploy with Netlify's features (forms, functions, redirects)
 
 ```bash
-# Deploy with custom domain
 bash scripts/deploy.sh \
-  --provider surge \
+  --provider netlify \
   --dir ./build \
-  --domain my-demo.surge.sh
-
-# Deploy with auto-generated name
-bash scripts/deploy.sh \
-  --provider surge \
-  --dir ./build
+  --site my-app \
+  --prod
 ```
 
-### Workflow 5: Multi-Platform Deploy
+**Output:**
+```
+🚀 Deploying to Netlify...
+   Site: my-app
+   Directory: ./build (67 files, 2.4 MB)
+   Production: yes
 
-**Use case:** Deploy the same build to multiple platforms
+✅ Deployed successfully!
+   URL: https://my-app.netlify.app
+   Deploy ID: 6543210fedcba
+   Time: 8s
+```
+
+### Workflow 3: Deploy to Vercel
+
+**Use case:** Deploy with Vercel's edge network and preview URLs
 
 ```bash
 bash scripts/deploy.sh \
-  --provider surge,netlify \
-  --dir ./dist \
-  --site-name my-app
+  --provider vercel \
+  --dir ./out \
+  --prod
+```
 
-# 🚀 Deploying to Surge... ✅ https://my-app.surge.sh
-# 🚀 Deploying to Netlify... ✅ https://my-app.netlify.app
+### Workflow 4: Preview Deployment (Any Provider)
+
+**Use case:** Deploy a branch/PR for review without touching production
+
+```bash
+# Cloudflare preview
+bash scripts/deploy.sh --provider cloudflare --dir ./dist --project my-site --branch feature-redesign
+
+# Netlify draft
+bash scripts/deploy.sh --provider netlify --dir ./build --site my-site
+
+# Vercel preview (default without --prod)
+bash scripts/deploy.sh --provider vercel --dir ./out
+```
+
+### Workflow 5: Multi-Provider Deploy
+
+**Use case:** Deploy the same site to multiple CDNs for redundancy
+
+```bash
+bash scripts/deploy.sh --provider cloudflare --dir ./dist --project my-site
+bash scripts/deploy.sh --provider netlify --dir ./dist --site my-site --prod
+bash scripts/deploy.sh --provider vercel --dir ./dist --prod
+```
+
+### Workflow 6: Set Environment Variables
+
+```bash
+# Cloudflare
+bash scripts/env.sh --provider cloudflare --project my-site --set "API_URL=https://api.example.com"
+
+# Netlify
+bash scripts/env.sh --provider netlify --site my-site --set "API_URL=https://api.example.com"
+
+# Vercel
+bash scripts/env.sh --provider vercel --set "API_URL=https://api.example.com"
+```
+
+### Workflow 7: Custom Domain Setup
+
+```bash
+# Cloudflare
+bash scripts/domain.sh --provider cloudflare --project my-site --domain example.com
+
+# Netlify
+bash scripts/domain.sh --provider netlify --site my-site --domain example.com
+
+# Vercel
+bash scripts/domain.sh --provider vercel --domain example.com
 ```
 
 ## Configuration
@@ -152,145 +177,129 @@ bash scripts/deploy.sh \
 ### Environment Variables
 
 ```bash
+# Cloudflare
+export CLOUDFLARE_API_TOKEN="<token>"
+export CLOUDFLARE_ACCOUNT_ID="<account-id>"
+
 # Netlify
-export NETLIFY_AUTH_TOKEN="<token>"       # Get from app.netlify.com/user/applications
-export NETLIFY_SITE_ID="<site-id>"        # Optional: existing site ID
+export NETLIFY_AUTH_TOKEN="<token>"
 
-# Cloudflare Pages
-export CLOUDFLARE_API_TOKEN="<token>"     # Get from dash.cloudflare.com/profile/api-tokens
-export CLOUDFLARE_ACCOUNT_ID="<id>"       # Your account ID
-
-# Surge
-export SURGE_LOGIN="<email>"              # Optional: for persistent domains
-export SURGE_TOKEN="<token>"              # Optional: for CI/CD
-
-# GitHub Pages (uses git credentials already configured)
+# Vercel
+export VERCEL_TOKEN="<token>"
+export VERCEL_ORG_ID="<org-id>"        # optional
+export VERCEL_PROJECT_ID="<project-id>" # optional
 ```
 
 ### Config File (Optional)
 
 ```yaml
-# deploy.yaml
-default_provider: netlify
-default_dir: ./dist
-
-providers:
-  netlify:
-    site_name: my-production-app
-    prod: true
-  surge:
-    domain: my-app.surge.sh
-  github-pages:
-    branch: gh-pages
-    repo: origin
-  cloudflare:
-    project_name: my-cf-project
-```
-
-```bash
-# Deploy using config file
-bash scripts/deploy.sh --config deploy.yaml
+# deploy.yaml — use with: bash scripts/deploy.sh --config deploy.yaml
+provider: cloudflare
+directory: ./dist
+project: my-portfolio
+branch: main
+env:
+  API_URL: https://api.example.com
+  NODE_ENV: production
 ```
 
 ## Advanced Usage
 
-### Pre-Deploy Build Hook
+### Build + Deploy Pipeline
 
 ```bash
-# Run build command before deploying
-bash scripts/deploy.sh \
-  --provider netlify \
+# Build your site first, then deploy
+npm run build && bash scripts/deploy.sh --provider cloudflare --dir ./dist --project my-site --prod
+
+# Or use the all-in-one:
+bash scripts/build-deploy.sh --provider netlify --build-cmd "npm run build" --dir ./dist --site my-site
+```
+
+### CI/CD Integration (Cron-Based)
+
+```bash
+# Deploy on schedule via OpenClaw cron
+# Pulls latest from git, builds, deploys
+bash scripts/build-deploy.sh \
+  --provider cloudflare \
+  --git-pull \
+  --build-cmd "npm run build" \
   --dir ./dist \
-  --build "npm run build"
-
-# Runs: npm run build → deploys ./dist
+  --project my-site
 ```
 
-### Teardown / Delete Site
+### Rollback
 
 ```bash
-# Remove a Surge deployment
-bash scripts/deploy.sh --provider surge --teardown --domain my-app.surge.sh
+# Netlify — rollback to previous deploy
+bash scripts/rollback.sh --provider netlify --site my-site
 
-# Remove Netlify site
-bash scripts/deploy.sh --provider netlify --teardown --site-name my-app
-```
-
-### CI/CD Integration
-
-```bash
-# In GitHub Actions, GitLab CI, etc.
-# Just set env vars and run:
-bash scripts/deploy.sh --provider netlify --dir ./dist --prod
-
-# Exit code 0 = success, 1 = failure
+# Vercel — rollback to previous deployment
+bash scripts/rollback.sh --provider vercel
 ```
 
 ### List Deployments
 
 ```bash
-# Netlify: list recent deploys
-bash scripts/deploy.sh --provider netlify --list --site-name my-app
-
-# Output:
-# #1  2026-03-02 05:30  Production  https://my-app.netlify.app
-# #2  2026-03-01 14:15  Draft       https://abc123--my-app.netlify.app
+bash scripts/list.sh --provider cloudflare --project my-site
+bash scripts/list.sh --provider netlify --site my-site --limit 10
+bash scripts/list.sh --provider vercel --limit 5
 ```
 
 ## Troubleshooting
 
-### Issue: "netlify: command not found"
+### Issue: "wrangler: command not found"
 
 **Fix:**
 ```bash
-npm install -g netlify-cli
-# or
-npx netlify-cli deploy --dir ./dist
+bash scripts/install.sh cloudflare
+# or manually:
+npm install -g wrangler
 ```
 
-### Issue: "Error: 401 Unauthorized" (Netlify)
-
-**Fix:**
-1. Generate a new token: https://app.netlify.com/user/applications#personal-access-tokens
-2. Set: `export NETLIFY_AUTH_TOKEN="<new-token>"`
-
-### Issue: GitHub Pages not updating
-
-**Fix:**
-1. Check if GitHub Pages is enabled in repo Settings → Pages
-2. Ensure the branch matches: `--branch gh-pages`
-3. Wait 1-2 minutes — GitHub Pages has a propagation delay
-
-### Issue: Surge domain taken
+### Issue: "Not authenticated"
 
 **Fix:**
 ```bash
-# Use a unique domain
-bash scripts/deploy.sh --provider surge --dir ./dist --domain unique-name-12345.surge.sh
+# Interactive login
+npx wrangler login        # Cloudflare
+npx netlify login         # Netlify
+npx vercel login          # Vercel
+
+# Or set token in environment
+export CLOUDFLARE_API_TOKEN="..."
 ```
 
-### Issue: Cloudflare "project not found"
+### Issue: "Project not found"
 
-**Fix:**
+**Fix:** The script auto-creates projects on first deploy. If it fails:
 ```bash
-# Create the project first
-wrangler pages project create my-project
-# Then deploy
-bash scripts/deploy.sh --provider cloudflare --dir ./dist --project-name my-project
+# Cloudflare — create manually
+npx wrangler pages project create my-site
+
+# Netlify — create manually
+npx netlify sites:create --name my-site
 ```
 
-## Key Principles
+### Issue: "Directory is empty"
 
-1. **One command** — No multi-step dashboard clicking
-2. **Provider-agnostic** — Same interface for all platforms
-3. **CI/CD ready** — Works headless with env vars
-4. **Non-destructive** — Draft deploys by default (Netlify)
-5. **Idempotent** — Run again to update, won't duplicate
+**Fix:** Make sure you've built your site first:
+```bash
+npm run build   # or your build command
+ls ./dist/      # verify files exist
+```
 
 ## Dependencies
 
 - `bash` (4.0+)
-- `curl` (HTTP requests)
-- `git` (GitHub Pages)
-- `npm` / `npx` (installing provider CLIs)
-- Provider CLIs: `surge`, `netlify-cli`, `wrangler` (installed per-provider)
+- `node` (18+) and `npm` — for installing provider CLIs
+- `curl` — for API fallback
+- Provider CLI: `wrangler` (Cloudflare), `netlify-cli` (Netlify), or `vercel` (Vercel)
+
+## Key Principles
+
+1. **One command deploy** — No config files required for basic deploys
+2. **Provider-agnostic** — Same interface for CF Pages, Netlify, Vercel
+3. **Auto-create projects** — First deploy creates the project automatically
+4. **Preview by default** — Production deploys require explicit `--prod` flag
+5. **Fail gracefully** — Clear error messages, no silent failures
