@@ -1,7 +1,7 @@
 ---
 name: age-encryption
 description: >-
-  Modern file encryption using age — simple, secure, no configuration needed.
+  Encrypt and decrypt files using age — the modern, simple replacement for GPG.
 categories: [security, automation]
 dependencies: [age, bash]
 ---
@@ -10,11 +10,11 @@ dependencies: [age, bash]
 
 ## What This Does
 
-Encrypt and decrypt files using [age](https://github.com/FiloSottile/age), the modern replacement for GPG. No key servers, no configuration files, no complexity — just simple, auditable encryption that works.
+Encrypt and decrypt files using [age](https://github.com/FiloSottile/age), a modern and simple file encryption tool. No config files, no key servers, no complexity — just simple, auditable encryption that works.
 
-**Example:** "Encrypt my backup archive with a passphrase, or use age key pairs for automated encryption between machines."
+**Example:** "Encrypt a backup archive with a passphrase, or use age key pairs for passwordless encryption between machines."
 
-## Quick Start (3 minutes)
+## Quick Start (2 minutes)
 
 ### 1. Install age
 
@@ -28,7 +28,7 @@ bash scripts/install.sh
 # Passphrase-based (interactive)
 bash scripts/run.sh encrypt --passphrase --input secret.txt --output secret.txt.age
 
-# Key-based (automated)
+# Key-based (generate key first)
 bash scripts/run.sh keygen --output ~/.age/key.txt
 bash scripts/run.sh encrypt --key ~/.age/key.txt --input secret.txt --output secret.txt.age
 ```
@@ -36,7 +36,7 @@ bash scripts/run.sh encrypt --key ~/.age/key.txt --input secret.txt --output sec
 ### 3. Decrypt a File
 
 ```bash
-# Passphrase
+# Passphrase-based
 bash scripts/run.sh decrypt --passphrase --input secret.txt.age --output secret.txt
 
 # Key-based
@@ -45,166 +45,140 @@ bash scripts/run.sh decrypt --identity ~/.age/key.txt --input secret.txt.age --o
 
 ## Core Workflows
 
-### Workflow 1: Encrypt with Passphrase
+### Workflow 1: Passphrase Encryption
 
-**Use case:** Protect sensitive files with a memorable passphrase
-
-```bash
-bash scripts/run.sh encrypt --passphrase \
-  --input ~/documents/tax-return-2025.pdf \
-  --output ~/documents/tax-return-2025.pdf.age
-```
-
-**Output:**
-```
-🔒 Encrypted: tax-return-2025.pdf → tax-return-2025.pdf.age (2.3 MB)
-   Method: scrypt passphrase
-   Original deleted: No (use --shred to securely delete)
-```
-
-### Workflow 2: Batch Encrypt Directory
-
-**Use case:** Encrypt all files in a directory
+**Use case:** Encrypt a single file with a password you'll remember.
 
 ```bash
-bash scripts/run.sh batch-encrypt \
-  --passphrase \
-  --dir ~/sensitive-docs/ \
-  --output ~/encrypted-docs/
+bash scripts/run.sh encrypt --passphrase --input backup.tar.gz --output backup.tar.gz.age
+# Enter passphrase when prompted
+
+bash scripts/run.sh decrypt --passphrase --input backup.tar.gz.age --output backup.tar.gz
+# Enter same passphrase
 ```
 
-**Output:**
-```
-🔒 Batch encryption complete:
-   Files encrypted: 15
-   Total size: 48.2 MB → 48.3 MB
-   Output: ~/encrypted-docs/
-```
+### Workflow 2: Key Pair Encryption
 
-### Workflow 3: Key-Based Encryption (Automated)
-
-**Use case:** Encrypt files for another machine or person without sharing passwords
+**Use case:** Encrypt files that only your server/machine can decrypt.
 
 ```bash
-# Generate a key pair
-bash scripts/run.sh keygen --output ~/.age/server-key.txt
-
-# Output shows public key:
-# Public key: age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
+# Generate a key pair (do once)
+bash scripts/run.sh keygen --output ~/.age/key.txt
+# Prints public key: age1abc123...
 
 # Encrypt for that public key
-bash scripts/run.sh encrypt \
-  --recipient age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p \
-  --input backup.tar.gz \
-  --output backup.tar.gz.age
+bash scripts/run.sh encrypt --recipient age1abc123... --input data.sql --output data.sql.age
+
+# Decrypt with the private key
+bash scripts/run.sh decrypt --identity ~/.age/key.txt --input data.sql.age --output data.sql
 ```
 
-### Workflow 4: Multi-Recipient Encryption
+### Workflow 3: Encrypt Directory
 
-**Use case:** Encrypt a file that multiple people can decrypt
+**Use case:** Encrypt an entire directory (tar + encrypt).
+
+```bash
+bash scripts/run.sh encrypt-dir --passphrase --input ./secrets/ --output secrets.tar.age
+
+bash scripts/run.sh decrypt-dir --passphrase --input secrets.tar.age --output ./secrets-restored/
+```
+
+### Workflow 4: Batch Encrypt Multiple Files
+
+**Use case:** Encrypt all `.sql` files in a directory.
+
+```bash
+bash scripts/run.sh batch-encrypt --passphrase --pattern "*.sql" --dir ./backups/
+
+# Creates .age files alongside originals
+# backups/dump1.sql → backups/dump1.sql.age
+# backups/dump2.sql → backups/dump2.sql.age
+```
+
+### Workflow 5: Multi-Recipient Encryption
+
+**Use case:** Encrypt a file that multiple people/machines can decrypt.
 
 ```bash
 bash scripts/run.sh encrypt \
-  --recipient age1abc...person1 \
-  --recipient age1def...person2 \
-  --recipient-file team-keys.txt \
+  --recipient age1abc123... \
+  --recipient age1def456... \
   --input shared-secret.txt \
   --output shared-secret.txt.age
+
+# Either recipient's private key can decrypt
 ```
 
-### Workflow 5: Pipe-Based Encryption
+### Workflow 6: SSH Key Encryption
 
-**Use case:** Encrypt data streams (backups, database dumps)
+**Use case:** Encrypt using existing SSH keys (no age keys needed).
 
 ```bash
-# Encrypt a database dump on the fly
-pg_dump mydb | bash scripts/run.sh encrypt --passphrase --armor > db-backup.age
+# Encrypt for an SSH public key
+bash scripts/run.sh encrypt --ssh-key ~/.ssh/id_ed25519.pub --input secret.txt --output secret.txt.age
+
+# Decrypt with SSH private key
+bash scripts/run.sh decrypt --identity ~/.ssh/id_ed25519 --input secret.txt.age --output secret.txt
+```
+
+### Workflow 7: Pipe-Based Encryption
+
+**Use case:** Encrypt data from stdin (database dumps, command output).
+
+```bash
+# Encrypt a database dump directly
+pg_dump mydb | bash scripts/run.sh encrypt --passphrase --output db-backup.sql.age
 
 # Decrypt and restore
-bash scripts/run.sh decrypt --passphrase --input db-backup.age | psql mydb
-```
-
-### Workflow 6: Secure File Shredding After Encryption
-
-**Use case:** Encrypt and securely delete the original
-
-```bash
-bash scripts/run.sh encrypt --passphrase --shred \
-  --input ~/secrets/credentials.json \
-  --output ~/secrets/credentials.json.age
-```
-
-**Output:**
-```
-🔒 Encrypted: credentials.json → credentials.json.age
-🗑️ Original securely shredded (3-pass overwrite)
+bash scripts/run.sh decrypt --passphrase --input db-backup.sql.age | psql mydb
 ```
 
 ## Configuration
+
+### Key Storage
+
+```bash
+# Default key location
+~/.age/key.txt
+
+# Custom location (set env var)
+export AGE_KEY_FILE="/path/to/key.txt"
+```
 
 ### Environment Variables
 
 ```bash
 # Default identity file for decryption
-export AGE_IDENTITY="~/.age/key.txt"
+export AGE_KEY_FILE="~/.age/key.txt"
 
-# Default recipient for encryption
-export AGE_RECIPIENT="age1ql3z7hjy..."
-
-# Enable armor (ASCII output) by default
-export AGE_ARMOR=true
-```
-
-### Recipients File
-
-```text
-# team-keys.txt — one public key per line
-# Alice
-age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
-# Bob
-age1uf4k0dks8n2hka60xg0r5yvj0vxz9az8s8lhp4e3lp2e7xyqk6pqhm7dxt
+# For automation: passphrase from env (non-interactive)
+export AGE_PASSPHRASE="your-secret-passphrase"
 ```
 
 ## Advanced Usage
 
-### Encrypt with SSH Keys
+### Encrypt + Upload to S3
 
 ```bash
-# age supports SSH keys natively
-bash scripts/run.sh encrypt \
-  --recipient "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..." \
-  --input secret.txt \
-  --output secret.txt.age
-
-# Decrypt with SSH key
-bash scripts/run.sh decrypt \
-  --identity ~/.ssh/id_ed25519 \
-  --input secret.txt.age \
-  --output secret.txt
+bash scripts/run.sh encrypt --passphrase --input backup.tar.gz --output - | \
+  aws s3 cp - s3://my-bucket/backups/backup.tar.gz.age
 ```
 
-### Automated Backup Encryption
+### Scheduled Encrypted Backups (Cron)
 
 ```bash
-# Add to crontab: encrypt daily backups
-0 2 * * * tar czf - /home/data | /path/to/scripts/run.sh encrypt \
-  --recipient age1abc... \
-  --armor > /backups/$(date +\%Y\%m\%d).tar.gz.age
+# Add to crontab
+0 2 * * * AGE_PASSPHRASE="secret" bash /path/to/scripts/run.sh encrypt \
+  --passphrase --input /var/backups/daily.tar.gz \
+  --output /var/backups/encrypted/daily-$(date +\%Y\%m\%d).tar.gz.age
 ```
 
 ### Verify Encryption
 
 ```bash
-bash scripts/run.sh info --input encrypted-file.age
-```
-
-**Output:**
-```
-📄 File: encrypted-file.age
-   Format: age v1
-   Recipients: 2 (X25519)
-   Size: 1.2 MB
-   Armor: No
+# Check file is valid age-encrypted
+bash scripts/run.sh verify --input secret.txt.age
+# Output: ✅ Valid age-encrypted file (1234 bytes, created 2026-03-05)
 ```
 
 ## Troubleshooting
@@ -223,31 +197,28 @@ bash scripts/install.sh
 ### Issue: "no identity matched any of the recipients"
 
 **Check:**
-1. You're using the correct identity file: `age-keygen -y ~/.age/key.txt`
+1. You're using the correct private key: `age-keygen -y ~/.age/key.txt` shows the public key
 2. The file was encrypted for your public key
-3. For passphrase-encrypted files, use `--passphrase` flag
+3. Key file permissions: `chmod 600 ~/.age/key.txt`
 
-### Issue: "unknown format"
+### Issue: "incorrect passphrase"
 
-The file may not be age-encrypted. Check with:
-```bash
-file encrypted-file.age
-head -1 encrypted-file.age  # Should start with "age-encryption.org"
-```
+**Fix:** Double-check your passphrase. age uses scrypt for passphrase-based encryption — there's no recovery if forgotten.
 
-## Why age over GPG?
+## Why age Over GPG?
 
 | Feature | age | GPG |
 |---------|-----|-----|
-| Setup time | 0 config | Key servers, trust model, config |
-| Key format | Simple string | Complex key rings |
-| Auditable | ~600 lines of Go | 500k+ lines |
-| SSH key support | Native | Plugin needed |
-| Streaming | Yes | Yes |
-| Multiple recipients | Yes | Yes |
+| Setup time | 30 seconds | 30 minutes |
+| Config files | None | ~/.gnupg/* |
+| Key format | Simple text | Complex keyring |
+| Learning curve | Minimal | Steep |
+| Audit surface | ~3000 lines | ~300,000 lines |
+| SSH key support | ✅ Built-in | ❌ No |
 
 ## Dependencies
 
-- `age` (1.0+) — installed by `scripts/install.sh`
+- `age` (installed via scripts/install.sh)
 - `bash` (4.0+)
-- Optional: `shred` (secure deletion, included in coreutils)
+- `tar` (for directory encryption)
+- Optional: `ssh` keys (for SSH-based encryption)
