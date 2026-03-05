@@ -1,0 +1,4 @@
+# Packages to ignore during audit
+# Use glob patterns (e.g. linux-headers-*)
+# One pattern per line
+
