@@ -1,0 +1,40 @@
+# nftables Firewall Manager — Configuration Template
+# Copy this file and customize for your setup
+
+preset: server-basic  # Base preset to start from
+
+# Additional ports to allow (on top of preset)
+allow:
+  - port: 3000
+    proto: tcp
+    comment: "App server"
+  - port: 8080
+    proto: tcp
+    comment: "Reverse proxy"
+
+# IP blocklist
+blocklist:
+  - 192.168.1.100
+  # - 10.0.0.0/8
+
+# Rate limiting
+rate_limits:
+  - port: 22
+    rate: "5/minute"
+    burst: 10
+  # - port: 80
+  #   rate: "30/second"
+  #   burst: 50
+
+# Port forwarding (NAT)
+# nat:
+#   - dport: 80
+#     to: "127.0.0.1:8080"
+
+# GeoIP blocking (country codes)
+# geoblock:
+#   - CN
+#   - RU
+
+# Auto-update blocklists from threat feeds
+auto_update_blocklists: false
