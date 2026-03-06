@@ -1,0 +1,31 @@
+#cloud-config
+# Example cloud-init for Incus containers/VMs
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wget
+  - git
+  - htop
+  - vim
+  - unzip
+
+users:
+  - name: deploy
+    groups: sudo
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAA... your-key-here
+
+write_files:
+  - path: /etc/motd
+    content: |
+      ╔═══════════════════════════════════════╗
+      ║  Managed by Incus Container Manager   ║
+      ╚═══════════════════════════════════════╝
+
+runcmd:
+  - echo "Container initialized at $(date)" > /var/log/cloud-init-done.log
