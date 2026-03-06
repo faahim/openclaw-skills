@@ -1,0 +1,87 @@
+% Academic paper with abstract, sections, and citations
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage[style=numeric,sorting=none]{biblatex}
+\usepackage{parskip}
+
+% Bibliography file (create references.bib alongside this file)
+% \addbibresource{references.bib}
+
+\title{Paper Title: A Descriptive Subtitle}
+\author{
+  Author One\thanks{Affiliation One, email@example.com} \and
+  Author Two\thanks{Affiliation Two, email2@example.com}
+}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+A concise summary of the paper (150--250 words). State the problem, approach, key results, and significance. This should be self-contained and understandable without reading the full paper.
+\end{abstract}
+
+\textbf{Keywords:} keyword one, keyword two, keyword three
+
+\section{Introduction}
+
+Introduce the problem domain, motivation, and research question. Outline the paper's contributions and structure.
+
+\section{Related Work}
+
+Survey of existing literature and approaches. Compare and contrast with the proposed method.
+
+\section{Methodology}
+
+\subsection{Problem Formulation}
+
+Formal definition of the problem. Use equations where appropriate:
+
+\begin{equation}
+  \mathcal{L}(\theta) = -\frac{1}{N} \sum_{i=1}^{N} \left[ y_i \log \hat{y}_i + (1 - y_i) \log(1 - \hat{y}_i) \right]
+\end{equation}
+
+\subsection{Proposed Approach}
+
+Detailed description of the methodology, algorithm, or system design.
+
+\section{Experiments}
+
+\subsection{Setup}
+
+Description of datasets, baselines, evaluation metrics, and hyperparameters.
+
+\subsection{Results}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Method} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} \\
+\midrule
+Baseline A & 0.82 & 0.78 & 0.80 \\
+Baseline B & 0.85 & 0.81 & 0.83 \\
+\textbf{Ours} & \textbf{0.91} & \textbf{0.88} & \textbf{0.89} \\
+\bottomrule
+\end{tabular}
+\caption{Comparison of methods on the benchmark dataset.}
+\label{tab:results}
+\end{table}
+
+\subsection{Discussion}
+
+Analysis of results, ablation studies, failure cases, and limitations.
+
+\section{Conclusion}
+
+Summary of contributions and future work directions.
+
+% \printbibliography
+
+\end{document}

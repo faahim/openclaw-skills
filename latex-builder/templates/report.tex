@@ -1,0 +1,104 @@
+% Multi-section report with title page and table of contents
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{parskip}
+
+% Header/Footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small Report Title}
+\fancyhead[R]{\small\today}
+\fancyfoot[C]{\thepage}
+
+% Code listing style
+\lstset{
+  basicstyle=\ttfamily\small,
+  frame=single,
+  breaklines=true,
+  backgroundcolor=\color{gray!10}
+}
+
+\begin{document}
+
+% Title Page
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries Report Title\par}
+\vspace{1cm}
+{\Large Subtitle or Description\par}
+\vspace{2cm}
+{\large Author Name\par}
+{\large Organization Name\par}
+\vspace{1cm}
+{\large \today\par}
+\vfill
+{\small Confidential — Internal Use Only}
+\end{titlepage}
+
+% Table of Contents
+\tableofcontents
+\newpage
+
+\section{Executive Summary}
+
+Brief overview of the report's findings and recommendations. This section should stand alone — readers should understand the key takeaways without reading the full report.
+
+\section{Introduction}
+
+\subsection{Background}
+Context and background information relevant to the report.
+
+\subsection{Objectives}
+What this report aims to accomplish:
+\begin{enumerate}
+  \item Analyze current system performance
+  \item Identify bottlenecks and improvement opportunities
+  \item Recommend actionable next steps
+\end{enumerate}
+
+\section{Methodology}
+
+Description of the approach, tools, and data sources used.
+
+\section{Findings}
+
+\subsection{Key Metrics}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Metric} & \textbf{Current} & \textbf{Target} & \textbf{Gap} \\
+\midrule
+Response Time & 450ms & 200ms & -250ms \\
+Uptime & 99.5\% & 99.9\% & -0.4\% \\
+Error Rate & 2.1\% & 0.5\% & -1.6\% \\
+\bottomrule
+\end{tabular}
+\caption{Performance metrics summary}
+\end{table}
+
+\subsection{Analysis}
+
+Detailed analysis of findings with supporting evidence.
+
+\section{Recommendations}
+
+\begin{enumerate}
+  \item \textbf{Short-term:} Optimize database queries to reduce response time
+  \item \textbf{Medium-term:} Implement caching layer for frequently accessed data
+  \item \textbf{Long-term:} Migrate to distributed architecture for horizontal scaling
+\end{enumerate}
+
+\section{Conclusion}
+
+Summary of key findings and recommended next steps.
+
+\end{document}

@@ -1,0 +1,104 @@
+% Beamer presentation template
+\documentclass[aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usecolortheme{default}
+\usepackage{graphicx}
+\usepackage{booktabs}
+
+% Customize colors
+\definecolor{primary}{HTML}{2D3748}
+\definecolor{accent}{HTML}{3182CE}
+\setbeamercolor{structure}{fg=accent}
+\setbeamercolor{title}{fg=primary}
+
+% Remove navigation symbols
+\setbeamertemplate{navigation symbols}{}
+
+% Slide numbers
+\setbeamertemplate{footline}[frame number]
+
+\title{Presentation Title}
+\subtitle{A Clear Subtitle}
+\author{Your Name}
+\institute{Organization}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}{Outline}
+\tableofcontents
+\end{frame}
+
+\section{Introduction}
+
+\begin{frame}{The Problem}
+\begin{itemize}
+  \item Current approaches are slow and error-prone
+  \item Manual processes waste 10+ hours per week
+  \item No standardized tooling exists
+\end{itemize}
+
+\vspace{12pt}
+\textbf{Goal:} Automate this workflow end-to-end.
+\end{frame}
+
+\section{Approach}
+
+\begin{frame}{Our Solution}
+\begin{columns}
+\begin{column}{0.5\textwidth}
+  \textbf{Key Features:}
+  \begin{enumerate}
+    \item Automated pipeline
+    \item Real-time monitoring
+    \item One-click deployment
+  \end{enumerate}
+\end{column}
+\begin{column}{0.5\textwidth}
+  % \includegraphics[width=\textwidth]{architecture.png}
+  \centering
+  \textit{[Architecture diagram]}
+\end{column}
+\end{columns}
+\end{frame}
+
+\section{Results}
+
+\begin{frame}{Performance Comparison}
+\begin{table}
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric} & \textbf{Before} & \textbf{After} \\
+\midrule
+Processing Time & 45 min & 3 min \\
+Error Rate & 12\% & 0.5\% \\
+User Satisfaction & 3.2/5 & 4.7/5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{12pt}
+\textbf{15x faster} with \textbf{96\% fewer errors}.
+\end{frame}
+
+\section{Conclusion}
+
+\begin{frame}{Key Takeaways}
+\begin{enumerate}
+  \item Automation reduced processing time by 93\%
+  \item Error rates dropped from 12\% to 0.5\%
+  \item User satisfaction increased by 47\%
+\end{enumerate}
+
+\vspace{20pt}
+\centering
+\Large\textbf{Questions?}\\[8pt]
+\normalsize\href{mailto:email@example.com}{email@example.com}
+\end{frame}
+
+\end{document}

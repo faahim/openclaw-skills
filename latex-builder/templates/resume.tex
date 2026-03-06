@@ -1,0 +1,68 @@
+% Modern single-page resume template
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=0.7in]{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{parskip}
+
+% Colors
+\definecolor{primary}{HTML}{2D3748}
+\definecolor{accent}{HTML}{3182CE}
+
+% Section formatting
+\titleformat{\section}{\large\bfseries\color{primary}}{}{0em}{}[\titlerule]
+\titlespacing*{\section}{0pt}{12pt}{6pt}
+
+% No page numbers
+\pagestyle{empty}
+
+\begin{document}
+
+% Header
+\begin{center}
+  {\LARGE\bfseries\color{primary} Your Name}\\[4pt]
+  \href{mailto:email@example.com}{email@example.com} $\cdot$
+  (555) 123-4567 $\cdot$
+  \href{https://github.com/username}{github.com/username} $\cdot$
+  City, State
+\end{center}
+
+\section{Summary}
+Experienced software engineer with 5+ years building scalable web applications. Passionate about clean code, developer experience, and shipping products that matter.
+
+\section{Experience}
+
+\textbf{Senior Software Engineer} \hfill Jan 2023 -- Present\\
+\textit{Company Name} \hfill Remote
+\begin{itemize}[nosep, leftmargin=*]
+  \item Led migration from monolith to microservices, reducing deploy times by 60\%
+  \item Designed and implemented real-time notification system serving 100k+ users
+  \item Mentored 3 junior engineers through code reviews and pair programming
+\end{itemize}
+
+\textbf{Software Engineer} \hfill Jun 2020 -- Dec 2022\\
+\textit{Previous Company} \hfill San Francisco, CA
+\begin{itemize}[nosep, leftmargin=*]
+  \item Built REST API serving 10M+ requests/day with 99.9\% uptime
+  \item Implemented CI/CD pipeline reducing release cycle from 2 weeks to 2 days
+  \item Contributed to open-source libraries used by 5k+ developers
+\end{itemize}
+
+\section{Education}
+
+\textbf{B.S. Computer Science} \hfill 2016 -- 2020\\
+\textit{University Name} \hfill GPA: 3.8/4.0
+
+\section{Skills}
+
+\textbf{Languages:} JavaScript/TypeScript, Python, Go, SQL\\
+\textbf{Frameworks:} React, Node.js, Next.js, FastAPI\\
+\textbf{Infrastructure:} AWS, Docker, Kubernetes, Terraform, PostgreSQL
+
+\section{Projects}
+
+\textbf{\href{https://github.com/username/project}{Project Name}} — Brief description of what it does and its impact. Built with React, Node.js, PostgreSQL. 500+ GitHub stars.
+
+\end{document}
