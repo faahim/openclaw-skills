@@ -1,0 +1,45 @@
+# Folder Watcher Configuration
+# Copy this file and customize for your needs
+
+watchers:
+  # Auto-organize downloads by file type
+  - name: "downloads-organizer"
+    dir: ~/Downloads
+    recursive: false
+    events: [create, moved_to]
+    exclude: ["*.part", "*.tmp", "*.crdownload"]
+    action: organize
+
+  # Rebuild project on source changes
+  - name: "project-builder"
+    dir: ~/myproject/src
+    recursive: true
+    events: [modify, create, delete]
+    exclude: ["node_modules", ".git", "*.swp"]
+    action: script
+    script: "cd ~/myproject && npm run build"
+    debounce: 3
+
+  # Compress large uploads
+  - name: "upload-compressor"
+    dir: /uploads
+    recursive: false
+    events: [create]
+    action: compress
+    min_size: "5M"
+
+  # Notify on new reports
+  - name: "report-notifier"
+    dir: ~/reports
+    recursive: false
+    events: [create]
+    action: notify
+    notify: telegram
+
+  # Backup changed files
+  - name: "backup-sync"
+    dir: ~/important
+    recursive: true
+    events: [modify, create]
+    action: copy
+    dest: /backup/important
