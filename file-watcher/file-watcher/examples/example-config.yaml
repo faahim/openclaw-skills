@@ -1,0 +1,35 @@
+# File Watcher — Example Configuration
+watchers:
+  # Watch uploads folder, process new images
+  - name: upload-processor
+    dir: /var/uploads
+    recursive: true
+    events: [create, moved_to]
+    filter: ["*.jpg", "*.png", "*.webp"]
+    exclude: [".tmp", "thumbs"]
+    on_change: "convert \"$WATCH_FILE\" -resize 800x800 /var/processed/$(basename \"$WATCH_FILE\")"
+    debounce: 2
+
+  # Watch nginx configs, auto-reload on change
+  - name: nginx-reload
+    dir: /etc/nginx/sites-enabled
+    events: [modify, create, delete]
+    on_change: "nginx -t && systemctl reload nginx"
+    telegram: true
+
+  # Watch log directory for new error logs
+  - name: error-alerts
+    dir: /var/log/myapp
+    events: [modify]
+    filter: ["*.log"]
+    on_change: 'tail -1 "$WATCH_FILE" | grep -qi "error\|fatal\|critical" && echo "🚨 Error in $WATCH_FILE"'
+    debounce: 5
+
+  # Auto-backup documents on change
+  - name: doc-backup
+    dir: /home/user/documents
+    recursive: true
+    events: [modify, create]
+    filter: ["*.md", "*.txt", "*.pdf"]
+    on_change: "rsync -avz /home/user/documents/ /mnt/backup/documents/"
+    debounce: 30

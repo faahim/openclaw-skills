@@ -1,49 +1,25 @@
 #!/bin/bash
-# Install File Watcher as a systemd service
-set -euo pipefail
+# Install file-watcher as a systemd service
+set -e
 
-NAME=""
-DIR=""
-EVENTS="modify,create,delete,move"
-ON_CHANGE=""
-DEBOUNCE=1
-EXT=""
-EXCLUDE=""
+CONFIG_PATH="${1:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    --name) NAME="$2"; shift 2 ;;
-    --dir) DIR="$2"; shift 2 ;;
-    --events) EVENTS="$2"; shift 2 ;;
-    --on-change) ON_CHANGE="$2"; shift 2 ;;
-    --debounce) DEBOUNCE="$2"; shift 2 ;;
-    --ext) EXT="$2"; shift 2 ;;
-    --exclude) EXCLUDE="$2"; shift 2 ;;
-    *) echo "Unknown: $1"; exit 1 ;;
-  esac
-done
-
-if [[ -z "$NAME" || -z "$DIR" || -z "$ON_CHANGE" ]]; then
-  echo "Usage: $0 --name <service-name> --dir <path> --on-change <command>"
+if [ -z "$CONFIG_PATH" ]; then
+  echo "Usage: bash install-service.sh /path/to/config.yaml"
   exit 1
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVICE_NAME="file-watcher-${NAME}"
-SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+CONFIG_PATH=$(realpath "$CONFIG_PATH")
 
-WATCH_CMD="$SCRIPT_DIR/watch.sh --dir $DIR --events $EVENTS --on-change '$ON_CHANGE' --debounce $DEBOUNCE"
-[[ -n "$EXT" ]] && WATCH_CMD+=" --ext $EXT"
-[[ -n "$EXCLUDE" ]] && WATCH_CMD+=" --exclude '$EXCLUDE'"
-
-cat > /tmp/${SERVICE_NAME}.service <<EOF
+cat > /tmp/file-watcher.service <<EOF
 [Unit]
-Description=File Watcher: $NAME
+Description=File Watcher Service
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/bin/bash -c '$WATCH_CMD'
+ExecStart=/bin/bash ${SCRIPT_DIR}/watch.sh --config ${CONFIG_PATH}
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -53,13 +29,8 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-sudo mv /tmp/${SERVICE_NAME}.service "$SERVICE_FILE"
+sudo mv /tmp/file-watcher.service /etc/systemd/system/file-watcher.service
 sudo systemctl daemon-reload
-sudo systemctl enable "$SERVICE_NAME"
-sudo systemctl start "$SERVICE_NAME"
+sudo systemctl enable file-watcher
 
-echo "✅ Service '$SERVICE_NAME' installed and started"
-echo "   Status: sudo systemctl status $SERVICE_NAME"
-echo "   Logs:   sudo journalctl -u $SERVICE_NAME -f"
-echo "   Stop:   sudo systemctl stop $SERVICE_NAME"
-echo "   Remove: sudo systemctl disable $SERVICE_NAME && sudo rm $SERVICE_FILE"
+echo "✅ Service installed. Run: sudo systemctl start file-watcher"
