@@ -1,56 +1,69 @@
 #!/bin/bash
-# File Watcher — monitor directories and trigger actions on file changes
+# File Watcher — Main Script
+# Watches files/directories and triggers actions on changes
 set -euo pipefail
 
 VERSION="1.0.0"
-WATCH_DIR=""
-RECURSIVE=""
-EVENTS="create,modify,delete,moved_to,moved_from"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PID_DIR="/tmp"
+
+# Defaults
+WATCH_PATH=""
+EVENTS="modify,create,delete,move"
 FILTER=""
 EXCLUDE=""
-ON_CHANGE=""
-TELEGRAM=false
+RECURSIVE=false
+RUN_CMD=""
+DEBOUNCE=0
 LOG_FILE=""
-DEBOUNCE=1
 DAEMON=false
 QUIET=false
 CONFIG=""
-PID_DIR="/tmp"
+POLL_INTERVAL=0
+GENERATE_SERVICE=false
+STOP=false
 
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
+YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
 usage() {
   cat <<EOF
-File Watcher v${VERSION} — Watch files, trigger actions
+📂 File Watcher v${VERSION}
+Watch files/directories and trigger actions on changes.
 
 USAGE:
-  bash watch.sh --dir PATH [OPTIONS]
+  bash watch.sh --path <dir> [options]
+  bash watch.sh --config <file.yaml> [options]
 
 OPTIONS:
-  --dir PATH          Directory to watch (required)
-  --recursive         Watch subdirectories
-  --events EVENTS     Events: create,modify,delete,move,attrib (default: create,modify,delete,move)
-  --filter PATTERNS   Include only: '*.js,*.ts'
-  --exclude PATTERNS  Exclude: 'node_modules,.git,.tmp'
-  --on-change CMD     Command to run (\$WATCH_FILE, \$WATCH_EVENT, \$WATCH_DIR available)
-  --telegram          Send Telegram notification
-  --log FILE          Log events to file
-  --debounce SECS     Debounce delay (default: 1)
-  --daemon            Run in background
-  --quiet             Suppress console output
-  --config FILE       Use YAML config file
-  --list              List running watchers
-  --stop-all          Stop all running watchers
-  --help              Show this help
+  --path PATH        Directory or file to watch
+  --config FILE      YAML config for multi-watcher setup
+  --events EVENTS    Comma-separated: modify,create,delete,move,access,attrib
+  --filter REGEX     Only trigger on filenames matching regex
+  --exclude REGEX    Ignore filenames matching regex
+  --recursive        Watch subdirectories
+  --run COMMAND      Command to run on event (\$WATCH_FILE, \$WATCH_EVENT available)
+  --debounce SECS    Seconds to wait after last event before triggering
+  --log FILE         Log events to file
+  --daemon           Run in background
+  --quiet            Suppress event output
+  --poll SECS        Use polling instead of inotify (for NFS/CIFS)
+  --generate-service Print systemd unit file
+  --stop             Stop all background watchers
+  --help             Show this help
 
 EXAMPLES:
-  bash watch.sh --dir ./src --on-change "npm run build" --debounce 2
-  bash watch.sh --dir /var/uploads --events create --telegram --recursive
+  # Watch src/ for changes, rebuild
+  bash watch.sh --path ./src --events modify,create --run "npm run build" --debounce 2
+
+  # Watch config, restart service
+  bash watch.sh --path /etc/myapp/config.yaml --events modify --run "systemctl restart myapp"
+
+  # Multi-watcher from config
   bash watch.sh --config config.yaml --daemon
 EOF
   exit 0
@@ -58,267 +71,349 @@ EOF
 
 log_event() {
   local timestamp event file
-  timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
   event="$1"
   file="$2"
 
-  local icon
-  case "$event" in
-    CREATE|MOVED_TO) icon="✨" ;;
-    MODIFY)          icon="✏️" ;;
-    DELETE|MOVED_FROM) icon="🗑️" ;;
-    ATTRIB)          icon="🏷️" ;;
-    *)               icon="📋" ;;
-  esac
-
-  local msg="[$timestamp] $icon $event: $file"
-
   if [ "$QUIET" = false ]; then
-    echo -e "$msg"
+    case "$event" in
+      *CREATE*) echo -e "${GREEN}[$timestamp] CREATE${NC} $file" ;;
+      *DELETE*) echo -e "${RED}[$timestamp] DELETE${NC} $file" ;;
+      *MODIFY*) echo -e "${BLUE}[$timestamp] MODIFY${NC} $file" ;;
+      *MOVED*) echo -e "${YELLOW}[$timestamp] MOVE${NC} $file" ;;
+      *) echo "[$timestamp] $event $file" ;;
+    esac
   fi
 
   if [ -n "$LOG_FILE" ]; then
-    echo "$msg" >> "$LOG_FILE"
+    echo "[$timestamp] $event $file" >> "$LOG_FILE"
   fi
-}
-
-send_telegram() {
-  local event="$1" file="$2"
-  if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-    echo -e "${RED}⚠️ TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set${NC}" >&2
-    return 1
-  fi
-  local msg="📁 File Watcher Alert%0A%0AEvent: $event%0AFile: $file%0ATime: $(date '+%Y-%m-%d %H:%M:%S')"
-  curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage?chat_id=${TELEGRAM_CHAT_ID}&text=${msg}" >/dev/null 2>&1 &
 }
 
 run_action() {
-  local event="$1" file="$2" dir="$3"
-  if [ -n "$ON_CHANGE" ]; then
+  local file="$1" event="$2" dir="$3" name="$4"
+
+  if [ -n "$RUN_CMD" ]; then
     export WATCH_FILE="$file"
     export WATCH_EVENT="$event"
     export WATCH_DIR="$dir"
-    eval "$ON_CHANGE" &
-  fi
-}
-
-list_watchers() {
-  echo "Running file watchers:"
-  local found=false
-  for pidfile in ${PID_DIR}/file-watcher-*.pid; do
-    [ -f "$pidfile" ] || continue
-    local pid
-    pid=$(cat "$pidfile")
-    if kill -0 "$pid" 2>/dev/null; then
-      echo "  PID $pid — $(basename "$pidfile" .pid)"
-      found=true
-    else
-      rm -f "$pidfile"
+    export WATCH_NAME="$name"
+    
+    if [ "$QUIET" = false ]; then
+      echo -e "${YELLOW}  → Running: ${RUN_CMD}${NC}"
     fi
-  done
-  if [ "$found" = false ]; then
-    echo "  (none)"
+    
+    eval "$RUN_CMD" 2>&1 || true
   fi
 }
 
-stop_all() {
-  echo "Stopping all file watchers..."
-  local stopped=0
-  for pidfile in ${PID_DIR}/file-watcher-*.pid; do
-    [ -f "$pidfile" ] || continue
-    local pid
-    pid=$(cat "$pidfile")
-    if kill -0 "$pid" 2>/dev/null; then
-      kill "$pid" 2>/dev/null
-      echo "  Stopped PID $pid"
-      ((stopped++))
-    fi
-    rm -f "$pidfile"
+watch_inotify() {
+  local path="$1"
+  local inotify_events=""
+  local inotify_opts=()
+  local last_trigger=0
+
+  # Map events to inotify format
+  IFS=',' read -ra EVENT_ARRAY <<< "$EVENTS"
+  for evt in "${EVENT_ARRAY[@]}"; do
+    case "$evt" in
+      modify) inotify_events="${inotify_events:+$inotify_events,}modify,close_write" ;;
+      create) inotify_events="${inotify_events:+$inotify_events,}create" ;;
+      delete) inotify_events="${inotify_events:+$inotify_events,}delete" ;;
+      move)   inotify_events="${inotify_events:+$inotify_events,}moved_to,moved_from" ;;
+      access) inotify_events="${inotify_events:+$inotify_events,}access" ;;
+      attrib) inotify_events="${inotify_events:+$inotify_events,}attrib" ;;
+      *)      inotify_events="${inotify_events:+$inotify_events,}$evt" ;;
+    esac
   done
-  echo "Stopped $stopped watcher(s)"
-}
 
-watch_directory() {
-  local dir="$1"
-
-  # Validate directory
-  if [ ! -d "$dir" ]; then
-    echo -e "${RED}❌ Directory not found: $dir${NC}" >&2
-    exit 1
-  fi
-
-  # Check inotifywait
-  if ! command -v inotifywait &>/dev/null; then
-    echo -e "${RED}❌ inotifywait not found. Run: bash scripts/install.sh${NC}" >&2
-    exit 1
-  fi
-
-  # Build inotifywait args
-  local args=(-m -q --format '%e %w%f')
+  inotify_opts+=(-e "$inotify_events")
   
-  if [ -n "$RECURSIVE" ]; then
-    args+=(-r)
+  if [ "$RECURSIVE" = true ]; then
+    inotify_opts+=(-r)
   fi
 
-  # Map event names
-  local mapped_events
-  mapped_events=$(echo "$EVENTS" | sed 's/\bmove\b/moved_to,moved_from/g' | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
-  args+=(-e "$mapped_events")
-
-  # Exclude patterns
   if [ -n "$EXCLUDE" ]; then
-    IFS=',' read -ra EXCL <<< "$EXCLUDE"
-    for pattern in "${EXCL[@]}"; do
-      args+=(--exclude "$pattern")
-    done
+    inotify_opts+=(--exclude "$EXCLUDE")
   fi
 
-  args+=("$dir")
+  inotify_opts+=(-m --format '%e %w%f')
 
-  echo -e "${GREEN}👁️ Watching ${BLUE}$dir${NC} (${mapped_events})${NC}"
-  if [ -n "$FILTER" ]; then
-    echo -e "   Filter: $FILTER"
-  fi
-  if [ -n "$ON_CHANGE" ]; then
-    echo -e "   Action: $ON_CHANGE"
-  fi
-  if [ "$TELEGRAM" = true ]; then
-    echo -e "   Telegram alerts: enabled"
-  fi
+  echo -e "${GREEN}👁️  Watching: ${path}${NC}"
+  echo -e "   Events: ${EVENTS}"
+  [ -n "$FILTER" ] && echo -e "   Filter: ${FILTER}"
+  [ -n "$EXCLUDE" ] && echo -e "   Exclude: ${EXCLUDE}"
+  [ "$DEBOUNCE" -gt 0 ] && echo -e "   Debounce: ${DEBOUNCE}s"
+  [ -n "$RUN_CMD" ] && echo -e "   Action: ${RUN_CMD}"
   echo ""
 
-  # Debounce tracking
-  local last_file="" last_time=0
-
-  inotifywait "${args[@]}" | while read -r line; do
-    local event file
-    event=$(echo "$line" | awk '{print $1}')
-    file=$(echo "$line" | awk '{$1=""; print substr($0,2)}')
-
+  inotifywait "${inotify_opts[@]}" "$path" 2>/dev/null | while read -r event file; do
     # Apply filter
     if [ -n "$FILTER" ]; then
-      local matched=false
-      IFS=',' read -ra FILT <<< "$FILTER"
-      for pattern in "${FILT[@]}"; do
-        pattern=$(echo "$pattern" | xargs)  # trim whitespace
-        case "$(basename "$file")" in
-          $pattern) matched=true; break ;;
-        esac
-      done
-      if [ "$matched" = false ]; then
+      basename_file="$(basename "$file")"
+      if ! echo "$basename_file" | grep -qE "$FILTER"; then
         continue
       fi
     fi
 
-    # Debounce: skip if same file within debounce window
-    local now
-    now=$(date +%s)
-    if [ "$file" = "$last_file" ] && [ $((now - last_time)) -lt "$DEBOUNCE" ]; then
-      continue
-    fi
-    last_file="$file"
-    last_time=$now
-
-    # Log event
     log_event "$event" "$file"
 
-    # Telegram alert
-    if [ "$TELEGRAM" = true ]; then
-      send_telegram "$event" "$file"
+    # Debounce
+    if [ "$DEBOUNCE" -gt 0 ]; then
+      current=$(date +%s)
+      if [ $((current - last_trigger)) -lt "$DEBOUNCE" ]; then
+        continue
+      fi
+      last_trigger=$current
     fi
 
-    # Run action
-    run_action "$event" "$file" "$dir"
+    dir="$(dirname "$file")"
+    name="$(basename "$file")"
+    run_action "$file" "$event" "$dir" "$name"
   done
+}
+
+watch_poll() {
+  local path="$1"
+  local interval="$POLL_INTERVAL"
+  
+  echo -e "${GREEN}👁️  Watching (poll mode): ${path}${NC}"
+  echo -e "   Interval: ${interval}s"
+  echo ""
+
+  declare -A prev_state
+
+  # Initial snapshot
+  while IFS= read -r -d '' file; do
+    prev_state["$file"]="$(stat -c '%Y' "$file" 2>/dev/null || echo 0)"
+  done < <(find "$path" -type f -print0 2>/dev/null)
+
+  while true; do
+    sleep "$interval"
+    declare -A curr_state
+
+    while IFS= read -r -d '' file; do
+      curr_state["$file"]="$(stat -c '%Y' "$file" 2>/dev/null || echo 0)"
+    done < <(find "$path" -type f -print0 2>/dev/null)
+
+    # Check for new/modified files
+    for file in "${!curr_state[@]}"; do
+      if [ -n "$FILTER" ] && ! basename "$file" | grep -qE "$FILTER"; then
+        continue
+      fi
+      if [ -z "${prev_state[$file]+x}" ]; then
+        log_event "CREATE" "$file"
+        run_action "$file" "CREATE" "$(dirname "$file")" "$(basename "$file")"
+      elif [ "${curr_state[$file]}" != "${prev_state[$file]}" ]; then
+        log_event "MODIFY" "$file"
+        run_action "$file" "MODIFY" "$(dirname "$file")" "$(basename "$file")"
+      fi
+    done
+
+    # Check for deleted files
+    for file in "${!prev_state[@]}"; do
+      if [ -z "${curr_state[$file]+x}" ]; then
+        log_event "DELETE" "$file"
+        run_action "$file" "DELETE" "$(dirname "$file")" "$(basename "$file")"
+      fi
+    done
+
+    # Update state
+    unset prev_state
+    declare -A prev_state
+    for file in "${!curr_state[@]}"; do
+      prev_state["$file"]="${curr_state[$file]}"
+    done
+    unset curr_state
+  done
+}
+
+parse_config() {
+  local config_file="$1"
+  
+  if ! [ -f "$config_file" ]; then
+    echo "❌ Config file not found: $config_file"
+    exit 1
+  fi
+
+  # Simple YAML parser — extract watcher blocks
+  local in_watcher=false
+  local watcher_name="" watcher_path="" watcher_events="modify,create,delete"
+  local watcher_filter="" watcher_exclude="" watcher_recursive=false
+  local watcher_run="" watcher_debounce=0
+
+  while IFS= read -r line; do
+    # Skip comments and empty lines
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+
+    if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*name:[[:space:]]*\"?([^\"]+)\"? ]]; then
+      # New watcher block — launch previous if exists
+      if [ -n "$watcher_path" ]; then
+        (
+          WATCH_PATH="$watcher_path"
+          EVENTS="$watcher_events"
+          FILTER="$watcher_filter"
+          EXCLUDE="$watcher_exclude"
+          RECURSIVE="$watcher_recursive"
+          RUN_CMD="$watcher_run"
+          DEBOUNCE="$watcher_debounce"
+          echo -e "${BLUE}Starting watcher: ${watcher_name}${NC}"
+          watch_inotify "$WATCH_PATH"
+        ) &
+      fi
+      watcher_name="${BASH_REMATCH[1]}"
+      watcher_path="" watcher_events="modify,create,delete"
+      watcher_filter="" watcher_exclude="" watcher_recursive=false
+      watcher_run="" watcher_debounce=0
+    elif [[ "$line" =~ path:[[:space:]]*(.+) ]]; then
+      watcher_path="${BASH_REMATCH[1]}"
+    elif [[ "$line" =~ events:[[:space:]]*\[(.+)\] ]]; then
+      watcher_events="$(echo "${BASH_REMATCH[1]}" | tr -d ' "')"
+    elif [[ "$line" =~ filter:[[:space:]]*['\"](.+)['\"] ]]; then
+      watcher_filter="${BASH_REMATCH[1]}"
+    elif [[ "$line" =~ exclude:[[:space:]]*['\"](.+)['\"] ]]; then
+      watcher_exclude="${BASH_REMATCH[1]}"
+    elif [[ "$line" =~ recursive:[[:space:]]*(true|false) ]]; then
+      watcher_recursive="${BASH_REMATCH[1]}"
+    elif [[ "$line" =~ run:[[:space:]]*['\"](.+)['\"] ]]; then
+      watcher_run="${BASH_REMATCH[1]}"
+    elif [[ "$line" =~ debounce:[[:space:]]*([0-9]+) ]]; then
+      watcher_debounce="${BASH_REMATCH[1]}"
+    fi
+  done < "$config_file"
+
+  # Launch last watcher
+  if [ -n "$watcher_path" ]; then
+    (
+      WATCH_PATH="$watcher_path"
+      EVENTS="$watcher_events"
+      FILTER="$watcher_filter"
+      EXCLUDE="$watcher_exclude"
+      RECURSIVE="$watcher_recursive"
+      RUN_CMD="$watcher_run"
+      DEBOUNCE="$watcher_debounce"
+      echo -e "${BLUE}Starting watcher: ${watcher_name}${NC}"
+      watch_inotify "$WATCH_PATH"
+    ) &
+  fi
+
+  echo -e "${GREEN}All watchers started. Press Ctrl+C to stop.${NC}"
+  wait
+}
+
+generate_systemd() {
+  cat <<UNIT
+[Unit]
+Description=File Watcher Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$(readlink -f "$0") --config ${CONFIG:-/etc/file-watcher/config.yaml}
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
+stop_watchers() {
+  local count=0
+  for pidfile in "$PID_DIR"/file-watcher-*.pid; do
+    [ -f "$pidfile" ] || continue
+    pid=$(cat "$pidfile")
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid"
+      rm "$pidfile"
+      ((count++))
+    fi
+  done
+  echo "Stopped $count watcher(s)."
+  exit 0
 }
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --dir)       WATCH_DIR="$2"; shift 2 ;;
+    --path) WATCH_PATH="$2"; shift 2 ;;
+    --config) CONFIG="$2"; shift 2 ;;
+    --events) EVENTS="$2"; shift 2 ;;
+    --filter) FILTER="$2"; shift 2 ;;
+    --exclude) EXCLUDE="$2"; shift 2 ;;
     --recursive) RECURSIVE=true; shift ;;
-    --events)    EVENTS="$2"; shift 2 ;;
-    --filter)    FILTER="$2"; shift 2 ;;
-    --exclude)   EXCLUDE="$2"; shift 2 ;;
-    --on-change) ON_CHANGE="$2"; shift 2 ;;
-    --telegram)  TELEGRAM=true; shift ;;
-    --log)       LOG_FILE="$2"; shift 2 ;;
-    --debounce)  DEBOUNCE="$2"; shift 2 ;;
-    --daemon)    DAEMON=true; shift ;;
-    --quiet)     QUIET=true; shift ;;
-    --config)    CONFIG="$2"; shift 2 ;;
-    --list)      list_watchers; exit 0 ;;
-    --stop-all)  stop_all; exit 0 ;;
-    --help|-h)   usage ;;
-    *)           echo "Unknown option: $1"; usage ;;
+    --run) RUN_CMD="$2"; shift 2 ;;
+    --debounce) DEBOUNCE="$2"; shift 2 ;;
+    --log) LOG_FILE="$2"; shift 2 ;;
+    --daemon) DAEMON=true; shift ;;
+    --quiet) QUIET=true; shift ;;
+    --poll) POLL_INTERVAL="$2"; shift 2 ;;
+    --generate-service) GENERATE_SERVICE=true; shift ;;
+    --stop) stop_watchers ;;
+    --help|-h) usage ;;
+    *) echo "Unknown option: $1"; usage ;;
   esac
 done
 
-# Config file mode
+# Generate systemd service
+if [ "$GENERATE_SERVICE" = true ]; then
+  generate_systemd
+  exit 0
+fi
+
+# Config mode
 if [ -n "$CONFIG" ]; then
-  if ! command -v python3 &>/dev/null; then
-    echo "❌ python3 required for YAML config parsing" >&2
-    exit 1
+  if [ "$DAEMON" = true ]; then
+    parse_config "$CONFIG" &
+    PID=$!
+    echo "$PID" > "$PID_DIR/file-watcher-config-$PID.pid"
+    echo "Watcher daemonized (PID: $PID)"
+    exit 0
   fi
-
-  # Parse YAML config and launch watchers
-  python3 -c "
-import yaml, json, sys
-with open('$CONFIG') as f:
-    cfg = yaml.safe_load(f)
-for w in cfg.get('watchers', []):
-    print(json.dumps(w))
-" | while read -r watcher; do
-    local_dir=$(echo "$watcher" | python3 -c "import json,sys; w=json.load(sys.stdin); print(w.get('dir',''))")
-    local_events=$(echo "$watcher" | python3 -c "import json,sys; w=json.load(sys.stdin); print(','.join(w.get('events',['create','modify','delete','move'])))")
-    local_filter=$(echo "$watcher" | python3 -c "import json,sys; w=json.load(sys.stdin); print(','.join(w.get('filter',[])))")
-    local_exclude=$(echo "$watcher" | python3 -c "import json,sys; w=json.load(sys.stdin); print(','.join(w.get('exclude',[])))")
-    local_action=$(echo "$watcher" | python3 -c "import json,sys; w=json.load(sys.stdin); print(w.get('on_change',''))")
-    local_debounce=$(echo "$watcher" | python3 -c "import json,sys; w=json.load(sys.stdin); print(w.get('debounce',1))")
-    local_recursive=$(echo "$watcher" | python3 -c "import json,sys; w=json.load(sys.stdin); print('--recursive' if w.get('recursive',False) else '')")
-    local_telegram=$(echo "$watcher" | python3 -c "import json,sys; w=json.load(sys.stdin); print('--telegram' if w.get('telegram',False) else '')")
-
-    bash "$0" --dir "$local_dir" --events "$local_events" \
-      ${local_filter:+--filter "$local_filter"} \
-      ${local_exclude:+--exclude "$local_exclude"} \
-      ${local_action:+--on-change "$local_action"} \
-      --debounce "$local_debounce" \
-      $local_recursive $local_telegram --daemon &
-  done
-  echo "All watchers started from config"
+  parse_config "$CONFIG"
   exit 0
 fi
 
 # Validate
-if [ -z "$WATCH_DIR" ]; then
-  echo -e "${RED}❌ --dir is required${NC}" >&2
+if [ -z "$WATCH_PATH" ]; then
+  echo "❌ --path or --config required"
   usage
+fi
+
+if ! [ -e "$WATCH_PATH" ]; then
+  echo "❌ Path does not exist: $WATCH_PATH"
+  exit 1
+fi
+
+# Check for inotifywait
+if ! command -v inotifywait &>/dev/null; then
+  if [ "$POLL_INTERVAL" -eq 0 ]; then
+    echo "❌ inotifywait not found. Install: bash scripts/install.sh"
+    echo "   Or use --poll <seconds> for polling mode."
+    exit 1
+  fi
 fi
 
 # Daemon mode
 if [ "$DAEMON" = true ]; then
-  HASH=$(echo "$WATCH_DIR" | md5sum | cut -c1-8)
-  PID_FILE="${PID_DIR}/file-watcher-${HASH}.pid"
-  
-  nohup bash "$0" --dir "$WATCH_DIR" \
-    ${RECURSIVE:+--recursive} \
-    --events "$EVENTS" \
-    ${FILTER:+--filter "$FILTER"} \
-    ${EXCLUDE:+--exclude "$EXCLUDE"} \
-    ${ON_CHANGE:+--on-change "$ON_CHANGE"} \
-    ${TELEGRAM:+--telegram} \
-    ${LOG_FILE:+--log "$LOG_FILE"} \
-    --debounce "$DEBOUNCE" \
-    --quiet \
-    > /dev/null 2>&1 &
-  
-  echo $! > "$PID_FILE"
-  echo "Started watcher (PID $!) — $PID_FILE"
+  if [ "$POLL_INTERVAL" -gt 0 ]; then
+    watch_poll "$WATCH_PATH" &
+  else
+    watch_inotify "$WATCH_PATH" &
+  fi
+  PID=$!
+  PIDFILE="$PID_DIR/file-watcher-$PID.pid"
+  echo "$PID" > "$PIDFILE"
+  echo "Watcher daemonized (PID: $PID, pidfile: $PIDFILE)"
   exit 0
 fi
 
-# Trap for cleanup
-trap 'echo -e "\n${YELLOW}👋 Watcher stopped${NC}"; exit 0' INT TERM
-
-# Start watching
-watch_directory "$WATCH_DIR"
+# Foreground mode
+if [ "$POLL_INTERVAL" -gt 0 ]; then
+  watch_poll "$WATCH_PATH"
+else
+  watch_inotify "$WATCH_PATH"
+fi

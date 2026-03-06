@@ -4,65 +4,61 @@
 - **Type:** Skill
 - **Name:** file-watcher
 - **Display Name:** File Watcher
-- **Categories:** [automation, productivity]
+- **Categories:** [automation, dev-tools]
 - **Price:** $8
 - **Dependencies:** [inotify-tools, bash]
+- **Icon:** 👁️
 
 ## Tagline
 
-Watch files for changes — auto-trigger scripts, syncs, and alerts instantly
+Watch files for changes — auto-build, auto-deploy, auto-anything on save
 
 ## Description
 
-Manually checking if files changed is a waste of time. Whether it's processing uploads, reloading configs, backing up documents, or alerting on log errors — you need it to happen automatically, the instant a file changes.
+Every developer has a loop: edit file, switch terminal, run command, switch back. File Watcher kills that loop. It monitors files and directories in real time using Linux's inotify kernel subsystem and triggers any command you want — rebuild, deploy, restart, sync, alert.
 
-File Watcher uses Linux's inotify subsystem to monitor directories in real-time with zero polling and zero CPU waste. When files are created, modified, moved, or deleted, it triggers your custom actions — run scripts, send Telegram alerts, sync folders, or kick off builds.
+File Watcher monitors your files using inotify (zero CPU overhead — kernel-level events, not polling). When something changes — a file is saved, created, deleted, or moved — your command runs automatically. Debouncing prevents rapid re-triggers during batch saves.
 
 **What it does:**
-- 👁️ Watch any directory for file changes in real-time
-- ⚡ Trigger custom scripts/commands on create, modify, delete, or move events
-- 🔔 Send Telegram notifications on file changes
-- 🔁 Auto-sync directories with rsync on changes
-- 📁 Filter by file extension (*.js, *.log, *.pdf)
-- 🚫 Exclude patterns (node_modules, .git, .tmp)
-- ⏱️ Debounce rapid changes to avoid duplicate triggers
-- 🔄 Run as background daemon or systemd service
-- 📝 YAML config for managing multiple watchers
+- 👁️ Real-time file/directory monitoring (inotify + polling fallback)
+- ⚡ Trigger any shell command on create, modify, delete, or move events
+- ⏱️ Smart debouncing — batch rapid saves into one trigger
+- 🎯 Regex filters — only react to specific file types
+- 📋 YAML config for multi-path watching
+- 🔄 Systemd service generation for persistent watchers
+- 🐧 Works on any Linux (Ubuntu, Debian, RHEL, Arch, Alpine)
+- 📡 Polling fallback for NFS/CIFS network mounts
 
-Perfect for developers automating build triggers, sysadmins monitoring config changes, and anyone who needs file-based automation without polling.
+Perfect for developers who want auto-rebuild on save, sysadmins automating config-change responses, or anyone tired of manually running commands after file edits.
 
 ## Quick Start Preview
 
 ```bash
-# Watch a folder, run a script when files change
-bash scripts/watch.sh --dir /var/uploads --on-change "process.sh" --recursive
+# Auto-rebuild on code changes
+bash scripts/watch.sh --path ./src --events modify,create --run "npm run build" --debounce 2
 
-# [2026-03-06 12:00:05] ✨ CREATE: /var/uploads/photo.jpg
-# → process.sh triggered
+# Output:
+# 👁️  Watching: ./src
+# [2026-03-06 21:00:00] MODIFY ./src/index.ts
+#   → Running: npm run build
 ```
 
 ## Core Capabilities
 
-1. Real-time monitoring — Zero-polling via Linux inotify, instant detection
-2. Custom actions — Run any command/script when files change ($WATCH_FILE env var)
-3. Telegram alerts — Get notified on your phone when critical files change
-4. File filtering — Watch only specific extensions (*.js, *.log, *.pdf)
-5. Exclude patterns — Skip node_modules, .git, temp files
-6. Recursive watching — Monitor entire directory trees
-7. Debounce control — Avoid duplicate triggers on rapid edits
-8. Daemon mode — Run in background with PID management
-9. systemd integration — Install as a persistent system service
-10. YAML config — Define multiple watchers in one config file
-11. Event logging — Log all file events to file for audit trails
-12. Multi-watcher — Run multiple independent watchers simultaneously
+1. Real-time monitoring — Kernel-level inotify events, zero polling overhead
+2. Custom triggers — Run any shell command when files change
+3. Smart debouncing — Configurable delay prevents rapid re-triggers
+4. Regex filtering — Watch only `.ts`, `.css`, `.yaml`, or any pattern
+5. Exclusion patterns — Skip `node_modules`, `.git`, `dist` automatically
+6. Multi-path configs — YAML config for complex multi-directory setups
+7. Daemon mode — Background operation with PID management
+8. Systemd integration — Generate service files for persistent watchers
+9. Polling fallback — Works on NFS/CIFS where inotify doesn't
+10. Environment variables — `$WATCH_FILE`, `$WATCH_EVENT` available in actions
 
 ## Dependencies
 - `bash` (4.0+)
 - `inotify-tools` (auto-installed via install.sh)
-- Optional: `curl` (Telegram alerts), `python3` (YAML config)
 
 ## Installation Time
 **2 minutes** — Run install.sh, start watching
-
-## Pricing Justification
-$8 — Simple utility with real automation value. Saves manual polling/checking. Comparable to fswatch setups that take 30+ min to configure properly.

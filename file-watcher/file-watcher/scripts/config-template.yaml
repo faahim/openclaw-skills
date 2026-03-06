@@ -1,30 +1,27 @@
 # File Watcher Configuration
-# Each watcher monitors a directory and triggers an action on changes.
+# Each watcher monitors a path and triggers actions on events.
 
 watchers:
-  - name: "downloads-sorter"
-    dir: ~/Downloads
-    events: [create, moved_to]
-    recursive: false
-    action: 'bash scripts/actions/sort-by-extension.sh "$WATCH_FILE"'
-
-  - name: "config-reloader"
-    dir: /etc/nginx/conf.d
-    events: [modify, create, delete]
+  - name: "source-rebuild"
+    path: ./src
     recursive: true
-    filter: '\.conf$'
-    exclude: '\.swp$|~$'
+    events: [modify, create, delete]
+    filter: '\.(ts|tsx|js|jsx|css)$'
+    exclude: 'node_modules|\.git|dist'
+    debounce: 2
+    run: "npm run build"
+
+  - name: "config-restart"
+    path: /etc/myapp
+    recursive: false
+    events: [modify]
+    filter: '\.yaml$|\.json$'
+    debounce: 1
+    run: "systemctl restart myapp"
+
+  - name: "upload-sync"
+    path: ./uploads
+    recursive: true
+    events: [create, moved_to]
     debounce: 5
-    action: 'sudo nginx -t && sudo systemctl reload nginx'
-
-  - name: "log-compressor"
-    dir: /var/log/myapp
-    events: [create]
-    filter: '\.log$'
-    debounce: 10
-    action: 'gzip -9 "$WATCH_FILE"'
-
-# Global settings
-settings:
-  log_file: /var/log/file-watcher.log
-  max_log_size: 10M
+    run: "rsync -av ./uploads/ backup:/data/uploads/"
