@@ -1,0 +1,81 @@
+{
+  "_meta": {
+    "template_version": 0,
+    "description": "Creates a customer, attaches a payment method, creates a subscription"
+  },
+  "fixtures": [
+    {
+      "name": "customer",
+      "path": "/v1/customers",
+      "method": "post",
+      "params": {
+        "name": "Test Customer",
+        "email": "test@example.com",
+        "description": "Created by Stripe CLI fixture"
+      }
+    },
+    {
+      "name": "payment_method",
+      "path": "/v1/payment_methods",
+      "method": "post",
+      "params": {
+        "type": "card",
+        "card": {
+          "token": "tok_visa"
+        }
+      }
+    },
+    {
+      "name": "attach_pm",
+      "path": "/v1/payment_methods/${payment_method:id}/attach",
+      "method": "post",
+      "params": {
+        "customer": "${customer:id}"
+      }
+    },
+    {
+      "name": "set_default_pm",
+      "path": "/v1/customers/${customer:id}",
+      "method": "post",
+      "params": {
+        "invoice_settings": {
+          "default_payment_method": "${payment_method:id}"
+        }
+      }
+    },
+    {
+      "name": "product",
+      "path": "/v1/products",
+      "method": "post",
+      "params": {
+        "name": "Test Subscription Product"
+      }
+    },
+    {
+      "name": "price",
+      "path": "/v1/prices",
+      "method": "post",
+      "params": {
+        "unit_amount": 1999,
+        "currency": "usd",
+        "recurring": {
+          "interval": "month"
+        },
+        "product": "${product:id}"
+      }
+    },
+    {
+      "name": "subscription",
+      "path": "/v1/subscriptions",
+      "method": "post",
+      "params": {
+        "customer": "${customer:id}",
+        "items": [
+          {
+            "price": "${price:id}"
+          }
+        ]
+      }
+    }
+  ]
+}
