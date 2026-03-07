@@ -1,64 +1,55 @@
-# Listing Copy: File Watcher
+# Listing Copy: File Watcher & Trigger
 
 ## Metadata
 - **Type:** Skill
 - **Name:** file-watcher
-- **Display Name:** File Watcher
+- **Display Name:** File Watcher & Trigger
 - **Categories:** [automation, dev-tools]
-- **Price:** $8
-- **Dependencies:** [inotify-tools, bash]
 - **Icon:** 👁️
+- **Dependencies:** [inotify-tools, bash]
 
 ## Tagline
-
-Watch files for changes — auto-build, auto-deploy, auto-anything on save
+Watch files for changes — auto-trigger commands on create, modify, or delete
 
 ## Description
 
-Every developer has a loop: edit file, switch terminal, run command, switch back. File Watcher kills that loop. It monitors files and directories in real time using Linux's inotify kernel subsystem and triggers any command you want — rebuild, deploy, restart, sync, alert.
+Checking for file changes manually or writing custom polling scripts wastes time and CPU. You need instant, reliable file monitoring that triggers actions the moment something changes.
 
-File Watcher monitors your files using inotify (zero CPU overhead — kernel-level events, not polling). When something changes — a file is saved, created, deleted, or moved — your command runs automatically. Debouncing prevents rapid re-triggers during batch saves.
+**File Watcher & Trigger** uses Linux kernel-level inotify to monitor files and directories with zero CPU overhead. When a file is created, modified, or deleted, your command runs instantly. No polling, no delays, no wasted resources.
 
 **What it does:**
-- 👁️ Real-time file/directory monitoring (inotify + polling fallback)
-- ⚡ Trigger any shell command on create, modify, delete, or move events
-- ⏱️ Smart debouncing — batch rapid saves into one trigger
-- 🎯 Regex filters — only react to specific file types
-- 📋 YAML config for multi-path watching
-- 🔄 Systemd service generation for persistent watchers
-- 🐧 Works on any Linux (Ubuntu, Debian, RHEL, Arch, Alpine)
-- 📡 Polling fallback for NFS/CIFS network mounts
+- 👁️ Real-time monitoring of files and directories using inotify (Linux) or fswatch (macOS)
+- ⚡ Instant command execution on file events (create, modify, delete, move)
+- 🎯 Regex filtering — only trigger for specific file patterns (.jpg, .py, .conf, etc.)
+- ⏱️ Smart debouncing — coalesce rapid changes (editors save multiple times)
+- 🔄 Recursive directory watching with configurable depth
+- 🛡️ Daemon mode with PID tracking and systemd service generation
+- 📋 YAML config for managing multiple watchers
+- 📝 Event logging with timestamps
 
-Perfect for developers who want auto-rebuild on save, sysadmins automating config-change responses, or anyone tired of manually running commands after file edits.
+**Perfect for:** developers who want auto-build on save, sysadmins who need config-reload automation, anyone processing uploaded files, or monitoring logs for error alerts.
 
 ## Quick Start Preview
 
 ```bash
-# Auto-rebuild on code changes
-bash scripts/watch.sh --path ./src --events modify,create --run "npm run build" --debounce 2
+# Auto-reload nginx when config changes
+bash scripts/watch.sh --path /etc/nginx/ --recursive --events modify --run 'nginx -t && systemctl reload nginx'
 
-# Output:
-# 👁️  Watching: ./src
-# [2026-03-06 21:00:00] MODIFY ./src/index.ts
-#   → Running: npm run build
+# Process new uploads
+bash scripts/watch.sh --path /uploads/ --events create --filter '\.jpg$' --run 'compress.sh "$WATCH_FILE"'
 ```
 
 ## Core Capabilities
 
-1. Real-time monitoring — Kernel-level inotify events, zero polling overhead
-2. Custom triggers — Run any shell command when files change
-3. Smart debouncing — Configurable delay prevents rapid re-triggers
-4. Regex filtering — Watch only `.ts`, `.css`, `.yaml`, or any pattern
-5. Exclusion patterns — Skip `node_modules`, `.git`, `dist` automatically
-6. Multi-path configs — YAML config for complex multi-directory setups
-7. Daemon mode — Background operation with PID management
-8. Systemd integration — Generate service files for persistent watchers
-9. Polling fallback — Works on NFS/CIFS where inotify doesn't
-10. Environment variables — `$WATCH_FILE`, `$WATCH_EVENT` available in actions
-
-## Dependencies
-- `bash` (4.0+)
-- `inotify-tools` (auto-installed via install.sh)
-
-## Installation Time
-**2 minutes** — Run install.sh, start watching
+1. Kernel-level file monitoring — uses inotify, zero CPU when idle
+2. Event-driven commands — run any shell command on file changes
+3. Smart debouncing — coalesce rapid-fire events from editors
+4. Regex file filtering — trigger only for matching filenames
+5. Recursive watching — monitor entire directory trees
+6. Environment variables — $WATCH_FILE, $WATCH_EVENT, $WATCH_NAME in commands
+7. Daemon mode — background execution with PID management
+8. Systemd integration — auto-generate service files for persistent watchers
+9. YAML config — manage multiple watchers in one file
+10. Cross-platform — inotifywait (Linux) + fswatch (macOS) fallback
+11. Event logging — timestamped log file output
+12. Max-runs limit — auto-stop after N triggers

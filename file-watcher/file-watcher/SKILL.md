@@ -1,173 +1,183 @@
 ---
 name: file-watcher
 description: >-
-  Watch files and directories for changes — trigger custom actions automatically on create, modify, delete, or move events.
+  Watch files and directories for changes — auto-trigger commands on create, modify, or delete events.
 categories: [automation, dev-tools]
 dependencies: [inotify-tools, bash]
 ---
 
-# File Watcher
+# File Watcher & Trigger
 
 ## What This Does
 
-Monitors files and directories for real-time changes using Linux's inotify kernel subsystem. When a file is created, modified, deleted, or moved, it triggers your custom action — rebuild a project, sync files, send a notification, restart a service, anything.
+Monitor files and directories for real-time changes (create, modify, delete, move) and automatically run commands when events happen. Uses Linux `inotifywait` for kernel-level file system monitoring — no polling, zero CPU overhead.
 
-**Example:** "Watch `./src/` — on any `.ts` file change, run `npm run build` automatically."
+**Example:** "Watch `/uploads/` — when a new image appears, auto-compress it. Watch `nginx.conf` — on change, reload nginx. Watch logs — on new error lines, send Telegram alert."
 
 ## Quick Start (2 minutes)
 
 ### 1. Install Dependencies
 
 ```bash
-bash scripts/install.sh
+# Ubuntu/Debian
+sudo apt-get install -y inotify-tools
+
+# Alpine
+sudo apk add inotify-tools
+
+# RHEL/CentOS/Fedora
+sudo dnf install -y inotify-tools
+
+# macOS (uses fswatch as fallback)
+brew install fswatch
+
+# Verify
+which inotifywait && echo "✅ Ready" || echo "❌ Install inotify-tools"
 ```
 
 ### 2. Watch a Directory
 
 ```bash
-# Watch current directory, print events
-bash scripts/watch.sh --path ./src --events modify,create,delete
-
-# Output:
-# [2026-03-06 21:00:00] MODIFY ./src/index.ts
-# [2026-03-06 21:00:05] CREATE ./src/utils.ts
+# Watch current directory for any changes
+bash scripts/watch.sh --path . --events create,modify --run 'echo "Changed: $WATCH_FILE"'
 ```
 
-### 3. Trigger Actions on Changes
+### 3. Watch Config File → Reload Service
 
 ```bash
-# Rebuild on file changes
-bash scripts/watch.sh --path ./src --events modify,create --run "npm run build"
-
-# Restart service on config change
-bash scripts/watch.sh --path /etc/myapp/config.yaml --events modify --run "systemctl restart myapp"
-
-# Sync on new files
-bash scripts/watch.sh --path ./uploads --events create --run "rsync -av ./uploads/ remote:/backups/"
+bash scripts/watch.sh \
+  --path /etc/nginx/nginx.conf \
+  --events modify \
+  --run 'nginx -t && systemctl reload nginx && echo "✅ Nginx reloaded"'
 ```
 
 ## Core Workflows
 
-### Workflow 1: Auto-Build on Code Changes
+### Workflow 1: Auto-Process Uploads
+
+**Use case:** Compress images when they appear in a directory
+
+```bash
+bash scripts/watch.sh \
+  --path /var/uploads/ \
+  --events create \
+  --filter '\.jpg$|\.png$' \
+  --run 'scripts/compress-image.sh "$WATCH_FILE"'
+```
+
+**Output:**
+```
+[2026-03-07 19:00:01] 👁️ Watching /var/uploads/ for CREATE events
+[2026-03-07 19:00:15] 📁 CREATE: photo.jpg → Running compress-image.sh
+[2026-03-07 19:00:16] ✅ Compressed photo.jpg (2.4MB → 890KB)
+```
+
+### Workflow 2: Config Change → Service Reload
+
+**Use case:** Auto-reload services when config files change
+
+```bash
+bash scripts/watch.sh \
+  --path /etc/myapp/config.yaml \
+  --events modify,close_write \
+  --run 'systemctl restart myapp'
+```
+
+### Workflow 3: Log File → Alert on Errors
+
+**Use case:** Watch log file, alert when errors appear
+
+```bash
+bash scripts/watch.sh \
+  --path /var/log/app.log \
+  --events modify \
+  --run 'tail -1 "$WATCH_FILE" | grep -qi "error" && curl -s "https://api.telegram.org/bot$TG_BOT_TOKEN/sendMessage?chat_id=$TG_CHAT_ID&text=Error+in+app.log"'
+```
+
+### Workflow 4: Sync on Change
+
+**Use case:** Auto-rsync when files change in a directory
+
+```bash
+bash scripts/watch.sh \
+  --path /home/user/project/ \
+  --events create,modify,delete \
+  --recursive \
+  --debounce 5 \
+  --run 'rsync -avz /home/user/project/ remote:/backup/project/'
+```
+
+### Workflow 5: Development Auto-Build
 
 **Use case:** Rebuild project when source files change
 
 ```bash
 bash scripts/watch.sh \
-  --path ./src \
-  --filter '\.tsx?$|\.css$' \
-  --events modify,create,delete \
-  --run "npm run build" \
-  --debounce 2
-```
-
-The `--debounce 2` waits 2 seconds after last change before running, preventing rapid re-triggers during batch saves.
-
-### Workflow 2: Auto-Deploy on Build Output
-
-**Use case:** Deploy when build artifacts change
-
-```bash
-bash scripts/watch.sh \
-  --path ./dist \
-  --events modify,create \
-  --run "rsync -avz ./dist/ user@server:/var/www/html/" \
-  --debounce 5
-```
-
-### Workflow 3: Log File Monitor with Alerts
-
-**Use case:** Alert when error patterns appear in logs
-
-```bash
-bash scripts/watch.sh \
-  --path /var/log/myapp.log \
-  --events modify \
-  --run 'tail -1 /var/log/myapp.log | grep -q "ERROR" && curl -s "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage?chat_id=$TELEGRAM_CHAT_ID&text=Error+detected+in+myapp"'
-```
-
-### Workflow 4: Auto-Backup on Config Changes
-
-**Use case:** Backup config files whenever they're modified
-
-```bash
-bash scripts/watch.sh \
-  --path /etc/nginx \
+  --path ./src/ \
   --recursive \
-  --events modify \
-  --run 'STAMP=$(date +%Y%m%d_%H%M%S); tar czf /backups/nginx_$STAMP.tar.gz /etc/nginx/'
-```
-
-### Workflow 5: Watch Multiple Paths with Config
-
-**Use case:** Complex multi-path watching
-
-```bash
-bash scripts/watch.sh --config config.yaml
+  --filter '\.ts$|\.tsx$' \
+  --events modify,create \
+  --debounce 2 \
+  --run 'npm run build'
 ```
 
 ## Configuration
 
-### Config File Format (YAML)
-
-```yaml
-# config.yaml
-watchers:
-  - name: "source-rebuild"
-    path: ./src
-    recursive: true
-    events: [modify, create, delete]
-    filter: '\.(ts|tsx|js|jsx|css)$'
-    exclude: 'node_modules|\.git|dist'
-    debounce: 2
-    run: "npm run build"
-
-  - name: "config-restart"
-    path: /etc/myapp
-    recursive: false
-    events: [modify]
-    filter: '\.yaml$|\.json$'
-    debounce: 1
-    run: "systemctl restart myapp"
-
-  - name: "upload-sync"
-    path: ./uploads
-    recursive: true
-    events: [create, moved_to]
-    run: "rsync -av ./uploads/ backup:/data/uploads/"
-    debounce: 5
-
-  - name: "log-alert"
-    path: /var/log/app.log
-    events: [modify]
-    run: 'tail -1 "$WATCH_FILE" | grep -qE "(ERROR|FATAL)" && echo "Alert: error in $WATCH_FILE" | mail -s "App Error" admin@example.com'
-```
-
-### Environment Variables Available in Actions
-
-When your `--run` command executes, these environment variables are set:
-
-```bash
-$WATCH_FILE    # Full path of the changed file
-$WATCH_EVENT   # Event type (MODIFY, CREATE, DELETE, MOVED_TO, etc.)
-$WATCH_DIR     # Directory being watched
-$WATCH_NAME    # Filename only (no path)
-```
-
 ### Command-Line Options
 
 ```
---path PATH        Directory or file to watch (required unless --config)
---config FILE      YAML config file for multi-watcher setup
---events EVENTS    Comma-separated: modify,create,delete,move,access,attrib
---filter REGEX     Only trigger on filenames matching regex
---exclude REGEX    Ignore filenames matching regex
---recursive        Watch subdirectories too
---run COMMAND      Command to execute on event
---debounce SECS    Wait N seconds after last event before triggering (default: 0)
---log FILE         Log events to file
---daemon           Run in background (creates PID file)
---quiet            Suppress event output (still runs actions)
+--path <path>         File or directory to watch (required)
+--events <events>     Comma-separated: create,modify,delete,move,close_write,attrib
+--run <command>       Command to execute on event (required)
+--recursive           Watch subdirectories too
+--filter <regex>      Only trigger for filenames matching regex
+--exclude <regex>     Ignore filenames matching regex
+--debounce <seconds>  Wait N seconds after event before running (coalesce rapid changes)
+--max-runs <N>        Stop after N triggers (0 = unlimited)
+--log <file>          Log events to file
+--daemon              Run in background (writes PID to /tmp/file-watcher-<hash>.pid)
+--quiet               Suppress event output, only show command output
+```
+
+### Environment Variables (available in --run commands)
+
+```bash
+$WATCH_FILE     # Full path of the changed file
+$WATCH_EVENT    # Event type (CREATE, MODIFY, DELETE, etc.)
+$WATCH_DIR      # Directory being watched
+$WATCH_NAME     # Filename only (no path)
+$WATCH_TIME     # ISO timestamp of event
+```
+
+### Config File Format (YAML)
+
+```yaml
+# watch-config.yaml
+watchers:
+  - name: "Upload Processor"
+    path: /var/uploads/
+    events: [create]
+    filter: '\.(jpg|png|gif)$'
+    recursive: true
+    debounce: 2
+    run: 'scripts/process-upload.sh "$WATCH_FILE"'
+
+  - name: "Nginx Config Reload"
+    path: /etc/nginx/
+    events: [modify, close_write]
+    filter: '\.conf$'
+    recursive: true
+    run: 'nginx -t && systemctl reload nginx'
+
+  - name: "Log Error Alert"
+    path: /var/log/app/error.log
+    events: [modify]
+    run: 'tail -1 "$WATCH_FILE" | grep -q "CRITICAL" && notify.sh "$WATCH_FILE"'
+```
+
+Run with config:
+```bash
+bash scripts/watch.sh --config watch-config.yaml
 ```
 
 ## Advanced Usage
@@ -176,78 +186,74 @@ $WATCH_NAME    # Filename only (no path)
 
 ```bash
 # Generate systemd unit file
-bash scripts/watch.sh --config /etc/file-watcher/config.yaml --generate-service > /etc/systemd/system/file-watcher.service
+bash scripts/install-service.sh \
+  --name "upload-watcher" \
+  --path /var/uploads/ \
+  --events create \
+  --run '/usr/local/bin/process-upload.sh "$WATCH_FILE"'
 
-# Enable and start
-sudo systemctl enable --now file-watcher
+# This creates /etc/systemd/system/file-watcher-upload-watcher.service
+# Then:
+sudo systemctl enable --now file-watcher-upload-watcher
 ```
 
-### Run as Background Daemon
+### Manage Running Watchers
 
 ```bash
-bash scripts/watch.sh --path ./src --run "make build" --daemon
+# List active watchers
+bash scripts/watch.sh --list
 
-# Check status
-cat /tmp/file-watcher-*.pid
+# Stop a background watcher
+bash scripts/watch.sh --stop <name-or-pid>
 
-# Stop
-bash scripts/watch.sh --stop
+# Stop all watchers
+bash scripts/watch.sh --stop-all
 ```
 
-### Chaining Multiple Actions
+### Increase Watch Limits (for large directories)
 
 ```bash
-bash scripts/watch.sh \
-  --path ./src \
-  --events modify \
-  --run 'npm run build && npm run test && echo "All good" || echo "Build failed"'
-```
+# Check current limit
+cat /proc/sys/fs/inotify/max_user_watches
 
-### Using with OpenClaw Cron
-
-```bash
-# Start watcher on boot via cron
-@reboot /path/to/scripts/watch.sh --config /path/to/config.yaml --daemon --log /var/log/file-watcher.log
-```
-
-## Troubleshooting
-
-### Issue: "inotifywait: command not found"
-
-**Fix:**
-```bash
-bash scripts/install.sh
-# Or manually:
-# Ubuntu/Debian: sudo apt-get install -y inotify-tools
-# RHEL/CentOS: sudo yum install -y inotify-tools
-# Arch: sudo pacman -S inotify-tools
-# Alpine: sudo apk add inotify-tools
-```
-
-### Issue: "Failed to watch; upper limit on inotify watches reached"
-
-**Fix:** Increase inotify watch limit
-```bash
+# Increase (default 8192, set to 524288)
+echo 524288 | sudo tee /proc/sys/fs/inotify/max_user_watches
 echo 'fs.inotify.max_user_watches=524288' | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
 ```
 
-### Issue: Events fire too rapidly / action runs multiple times
+## Troubleshooting
 
-**Fix:** Use `--debounce` to batch rapid events
+### Issue: "No space left on device" (inotify limit)
+
+**Fix:** Increase watch limits (see Advanced Usage above)
+
+### Issue: Events firing multiple times
+
+**Fix:** Use `--debounce 2` to coalesce rapid-fire events. Editors like vim create temp files that trigger extra events.
+
+### Issue: Not detecting changes in subdirectories
+
+**Fix:** Add `--recursive` flag
+
+### Issue: macOS — inotifywait not available
+
+**Fix:** The script auto-detects macOS and falls back to `fswatch`:
 ```bash
-bash scripts/watch.sh --path ./src --run "make" --debounce 3
+brew install fswatch
 ```
 
-### Issue: Watching doesn't work on NFS/CIFS mounts
+## Key Principles
 
-**Explanation:** inotify only works on local filesystems. For network mounts, use polling mode:
-```bash
-bash scripts/watch.sh --path /mnt/nfs/share --poll 5  # Check every 5 seconds
-```
+1. **Kernel-level** — Uses inotify (not polling), zero CPU when idle
+2. **Debounce** — Coalesce rapid changes to avoid command spam
+3. **Environment vars** — Changed file info passed to your command
+4. **Daemonize** — Run in background with PID tracking
+5. **Filter** — Regex-based include/exclude for precision
+6. **Cross-platform** — inotifywait (Linux) + fswatch (macOS) fallback
 
 ## Dependencies
 
+- `inotify-tools` (Linux) or `fswatch` (macOS)
 - `bash` (4.0+)
-- `inotify-tools` (inotifywait)
-- Optional: `yq` (for YAML config parsing — falls back to grep-based parser)
+- Optional: `yq` (for YAML config parsing)
