@@ -4,69 +4,44 @@
 - **Type:** Skill
 - **Name:** age-encryption
 - **Display Name:** Age Encryption Tool
-- **Categories:** [security, automation]
+- **Categories:** [security, productivity]
 - **Price:** $8
-- **Dependencies:** [age, bash]
+- **Dependencies:** [age]
+- **Icon:** 🔐
 
 ## Tagline
 
-Encrypt files with age — modern, simple, auditable encryption in seconds
+Encrypt files with age — modern, simple, zero-config file encryption
 
 ## Description
 
-GPG is powerful but painfully complex — keyrings, config files, trust models, and a 300,000-line codebase. For most encryption needs, it's massive overkill.
+Managing GPG keys is painful. Remembering which flags to use, configuring keyrings, dealing with trust models — it's complexity that gets in the way of actually encrypting things.
 
-Age Encryption Tool brings modern file encryption to your OpenClaw agent using [age](https://github.com/FiloSottile/age) — a ~3000-line, audited tool designed to be simple and secure. No config files, no key servers, no web of trust. Just encrypt and decrypt.
+Age Encryption Tool brings modern file encryption to your OpenClaw agent using [age](https://github.com/FiloSottile/age), the simple and secure encryption tool by Filippo Valsorda. No configuration, no keyrings, no complexity. Generate a key pair, encrypt files, done.
 
 **What it does:**
-- 🔐 Encrypt/decrypt files with passphrases or key pairs
-- 📁 Encrypt entire directories (tar + age)
-- 📦 Batch encrypt/decrypt files by pattern
 - 🔑 Generate and manage age key pairs
-- 🔗 Encrypt using SSH keys you already have
-- 👥 Multi-recipient encryption (multiple keys can decrypt)
-- 🔄 Pipe-based encryption (encrypt database dumps, command output)
+- 🔒 Encrypt files for one or multiple recipients
+- 🔓 Decrypt with private key or passphrase
+- 📦 Batch encrypt all sensitive files (`.env`, `.pem`, `.key`, etc.)
+- 🗜️ Compress + encrypt directories in one pipeline
+- 🔗 Works with existing SSH keys — no new keys needed
+- 📂 Batch decrypt entire directories
 
-Perfect for developers and sysadmins who need to encrypt backups, secrets, configs, or sensitive files without the complexity of GPG.
-
-## Quick Start Preview
-
-```bash
-# Install age
-bash scripts/install.sh
-
-# Encrypt with passphrase
-bash scripts/run.sh encrypt --passphrase --input secret.txt --output secret.txt.age
-
-# Decrypt
-bash scripts/run.sh decrypt --passphrase --input secret.txt.age --output secret.txt
-```
+**Who it's for:** Developers, sysadmins, and anyone who needs to encrypt files without the complexity of GPG.
 
 ## Core Capabilities
 
-1. Passphrase encryption — Simple password-based encryption for quick use
-2. Key pair encryption — Generate age keys for passwordless, automated encryption
-3. SSH key support — Encrypt using your existing ed25519/RSA SSH keys
-4. Directory encryption — Archive and encrypt entire directories in one command
-5. Batch operations — Encrypt/decrypt all matching files in a directory
-6. Multi-recipient — Encrypt for multiple keys; any can decrypt
-7. Pipe support — Encrypt stdin (database dumps, command output)
-8. Auto-install — Detects OS and installs age automatically
-9. Key management — Generate, list, and organize age key pairs
-10. File verification — Check if a file is valid age-encrypted
-
-## Dependencies
-- `bash` (4.0+)
-- `age` (auto-installed by scripts/install.sh)
-- `tar` (for directory encryption)
+1. Key generation — Create X25519 key pairs in one command
+2. Single file encryption — Encrypt any file for one or more recipients
+3. Passphrase mode — Quick encryption without managing keys
+4. Batch encryption — Auto-find and encrypt all sensitive files in a project
+5. Batch decryption — Decrypt all `.age` files in a directory
+6. SSH key support — Use existing ed25519/RSA SSH keys for encryption
+7. Directory archives — Compress + encrypt entire directories via pipe
+8. Multi-recipient — Encrypt for teams (multiple public keys)
+9. Auto-install — Detects OS and installs age automatically
+10. Git-friendly — Encrypted `.age` files are safe to commit
 
 ## Installation Time
-**2 minutes** — Run install script, start encrypting
-
-## Pricing Justification
-
-**Why $8:**
-- Simple utility with clear value
-- Replaces complex GPG workflows
-- One-time purchase vs learning GPG for hours
-- Includes auto-install, batch operations, directory encryption
+**2 minutes** — Auto-installs age, generates key pair, ready to encrypt

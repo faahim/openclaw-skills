@@ -1,224 +1,382 @@
 ---
 name: age-encryption
 description: >-
-  Encrypt and decrypt files using age — the modern, simple replacement for GPG.
-categories: [security, automation]
-dependencies: [age, bash]
+  Encrypt and decrypt files using age — the modern, simple file encryption tool. Manage keys, batch encrypt, and secure sensitive data.
+categories: [security, productivity]
+dependencies: [age]
 ---
 
 # Age Encryption Tool
 
 ## What This Does
 
-Encrypt and decrypt files using [age](https://github.com/FiloSottile/age), a modern and simple file encryption tool. No config files, no key servers, no complexity — just simple, auditable encryption that works.
+Encrypt and decrypt files using [age](https://github.com/FiloSottile/age) — a modern, simple, and secure file encryption tool. Unlike GPG, age has no configuration, no key servers, and no complexity. Generate keys, encrypt files for recipients, batch-process directories, and manage encrypted archives.
 
-**Example:** "Encrypt a backup archive with a passphrase, or use age key pairs for passwordless encryption between machines."
+**Example:** "Encrypt all `.env` files in a project, decrypt a backup archive, generate a new key pair."
 
 ## Quick Start (2 minutes)
 
 ### 1. Install age
 
 ```bash
-bash scripts/install.sh
+# Detect OS and install
+if command -v apt-get &>/dev/null; then
+  sudo apt-get update && sudo apt-get install -y age
+elif command -v brew &>/dev/null; then
+  brew install age
+elif command -v pacman &>/dev/null; then
+  sudo pacman -S age
+elif command -v dnf &>/dev/null; then
+  sudo dnf install age
+else
+  # Install from GitHub release (works everywhere)
+  AGE_VERSION="1.2.1"
+  ARCH=$(uname -m)
+  case "$ARCH" in
+    x86_64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+  esac
+  OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+  curl -sLO "https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-${OS}-${ARCH}.tar.gz"
+  tar xzf "age-v${AGE_VERSION}-${OS}-${ARCH}.tar.gz"
+  sudo mv age/age age/age-keygen /usr/local/bin/
+  rm -rf age "age-v${AGE_VERSION}-${OS}-${ARCH}.tar.gz"
+fi
+
+# Verify
+age --version
 ```
 
-### 2. Encrypt a File
+### 2. Generate a Key Pair
 
 ```bash
-# Passphrase-based (interactive)
-bash scripts/run.sh encrypt --passphrase --input secret.txt --output secret.txt.age
+# Generate key and save to file
+age-keygen -o ~/.config/age/key.txt 2>&1
 
-# Key-based (generate key first)
-bash scripts/run.sh keygen --output ~/.age/key.txt
-bash scripts/run.sh encrypt --key ~/.age/key.txt --input secret.txt --output secret.txt.age
+# Output shows your public key:
+# Public key: age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
+
+# Save the public key for sharing
+age-keygen -y ~/.config/age/key.txt > ~/.config/age/pubkey.txt
 ```
 
-### 3. Decrypt a File
+### 3. Encrypt a File
 
 ```bash
-# Passphrase-based
-bash scripts/run.sh decrypt --passphrase --input secret.txt.age --output secret.txt
+# Encrypt for yourself
+age -r $(cat ~/.config/age/pubkey.txt) -o secret.txt.age secret.txt
 
-# Key-based
-bash scripts/run.sh decrypt --identity ~/.age/key.txt --input secret.txt.age --output secret.txt
+# Decrypt
+age -d -i ~/.config/age/key.txt -o secret.txt secret.txt.age
 ```
 
 ## Core Workflows
 
-### Workflow 1: Passphrase Encryption
+### Workflow 1: Encrypt a Single File
 
-**Use case:** Encrypt a single file with a password you'll remember.
+**Use case:** Protect a sensitive file (env vars, credentials, private notes)
 
 ```bash
-bash scripts/run.sh encrypt --passphrase --input backup.tar.gz --output backup.tar.gz.age
-# Enter passphrase when prompted
+# Encrypt with your public key
+PUBKEY=$(cat ~/.config/age/pubkey.txt)
+age -r "$PUBKEY" -o config.env.age config.env
 
-bash scripts/run.sh decrypt --passphrase --input backup.tar.gz.age --output backup.tar.gz
-# Enter same passphrase
+# The original file still exists — remove it if desired
+rm config.env
+
+echo "✅ Encrypted to config.env.age"
 ```
 
-### Workflow 2: Key Pair Encryption
+### Workflow 2: Encrypt with a Passphrase (No Keys Needed)
 
-**Use case:** Encrypt files that only your server/machine can decrypt.
+**Use case:** Quick encryption when you don't want to manage keys
 
 ```bash
-# Generate a key pair (do once)
-bash scripts/run.sh keygen --output ~/.age/key.txt
-# Prints public key: age1abc123...
+# Encrypt with passphrase (interactive prompt)
+age -p -o backup.tar.age backup.tar
 
-# Encrypt for that public key
-bash scripts/run.sh encrypt --recipient age1abc123... --input data.sql --output data.sql.age
-
-# Decrypt with the private key
-bash scripts/run.sh decrypt --identity ~/.age/key.txt --input data.sql.age --output data.sql
+# Decrypt (will prompt for passphrase)
+age -d -o backup.tar backup.tar.age
 ```
 
-### Workflow 3: Encrypt Directory
+### Workflow 3: Batch Encrypt All Sensitive Files
 
-**Use case:** Encrypt an entire directory (tar + encrypt).
+**Use case:** Encrypt all `.env`, `.pem`, `.key` files in a project
 
 ```bash
-bash scripts/run.sh encrypt-dir --passphrase --input ./secrets/ --output secrets.tar.age
-
-bash scripts/run.sh decrypt-dir --passphrase --input secrets.tar.age --output ./secrets-restored/
+bash scripts/batch-encrypt.sh ~/myproject
 ```
 
-### Workflow 4: Batch Encrypt Multiple Files
+### Workflow 4: Encrypt for Multiple Recipients
 
-**Use case:** Encrypt all `.sql` files in a directory.
+**Use case:** Share encrypted files with team members
 
 ```bash
-bash scripts/run.sh batch-encrypt --passphrase --pattern "*.sql" --dir ./backups/
+# Encrypt for multiple people
+age -r age1abc...recipient1 \
+    -r age1def...recipient2 \
+    -r age1ghi...recipient3 \
+    -o shared-secret.age shared-secret.txt
 
-# Creates .age files alongside originals
-# backups/dump1.sql → backups/dump1.sql.age
-# backups/dump2.sql → backups/dump2.sql.age
+# Any of the three recipients can decrypt with their private key
+age -d -i ~/.config/age/key.txt -o shared-secret.txt shared-secret.age
 ```
 
-### Workflow 5: Multi-Recipient Encryption
+### Workflow 5: Encrypt & Compress a Directory
 
-**Use case:** Encrypt a file that multiple people/machines can decrypt.
+**Use case:** Create an encrypted backup of a directory
 
 ```bash
-bash scripts/run.sh encrypt \
-  --recipient age1abc123... \
-  --recipient age1def456... \
-  --input shared-secret.txt \
-  --output shared-secret.txt.age
+# Compress + encrypt in one pipeline
+tar czf - ~/important-docs | age -r $(cat ~/.config/age/pubkey.txt) -o docs-backup.tar.gz.age
 
-# Either recipient's private key can decrypt
+# Decrypt + extract
+age -d -i ~/.config/age/key.txt docs-backup.tar.gz.age | tar xzf -
 ```
 
 ### Workflow 6: SSH Key Encryption
 
-**Use case:** Encrypt using existing SSH keys (no age keys needed).
+**Use case:** Encrypt files using existing SSH keys (no age keys needed)
 
 ```bash
-# Encrypt for an SSH public key
-bash scripts/run.sh encrypt --ssh-key ~/.ssh/id_ed25519.pub --input secret.txt --output secret.txt.age
+# Encrypt using an SSH public key
+age -R ~/.ssh/id_ed25519.pub -o secret.age secret.txt
 
-# Decrypt with SSH private key
-bash scripts/run.sh decrypt --identity ~/.ssh/id_ed25519 --input secret.txt.age --output secret.txt
+# Decrypt using the SSH private key
+age -d -i ~/.ssh/id_ed25519 -o secret.txt secret.age
 ```
 
-### Workflow 7: Pipe-Based Encryption
+## Scripts
 
-**Use case:** Encrypt data from stdin (database dumps, command output).
+### scripts/install.sh — Install age
 
 ```bash
-# Encrypt a database dump directly
-pg_dump mydb | bash scripts/run.sh encrypt --passphrase --output db-backup.sql.age
+#!/bin/bash
+set -e
 
-# Decrypt and restore
-bash scripts/run.sh decrypt --passphrase --input db-backup.sql.age | psql mydb
+if command -v age &>/dev/null; then
+  echo "✅ age is already installed: $(age --version)"
+  exit 0
+fi
+
+echo "📦 Installing age..."
+
+if command -v apt-get &>/dev/null; then
+  sudo apt-get update -qq && sudo apt-get install -y -qq age
+elif command -v brew &>/dev/null; then
+  brew install age
+elif command -v pacman &>/dev/null; then
+  sudo pacman -S --noconfirm age
+elif command -v dnf &>/dev/null; then
+  sudo dnf install -y age
+else
+  AGE_VERSION="1.2.1"
+  ARCH=$(uname -m)
+  case "$ARCH" in
+    x86_64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+  esac
+  OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+  cd /tmp
+  curl -sLO "https://github.com/FiloSottile/age/releases/download/v${AGE_VERSION}/age-v${AGE_VERSION}-${OS}-${ARCH}.tar.gz"
+  tar xzf "age-v${AGE_VERSION}-${OS}-${ARCH}.tar.gz"
+  sudo mv age/age age/age-keygen /usr/local/bin/
+  rm -rf age "age-v${AGE_VERSION}-${OS}-${ARCH}.tar.gz"
+fi
+
+echo "✅ age installed: $(age --version)"
+```
+
+### scripts/keygen.sh — Generate & Store Keys
+
+```bash
+#!/bin/bash
+set -e
+
+KEY_DIR="${AGE_KEY_DIR:-$HOME/.config/age}"
+mkdir -p "$KEY_DIR"
+chmod 700 "$KEY_DIR"
+
+KEY_FILE="$KEY_DIR/key.txt"
+PUB_FILE="$KEY_DIR/pubkey.txt"
+
+if [ -f "$KEY_FILE" ]; then
+  echo "⚠️  Key already exists at $KEY_FILE"
+  echo "   Public key: $(age-keygen -y "$KEY_FILE")"
+  echo "   Use AGE_KEY_DIR to generate in a different location"
+  exit 0
+fi
+
+echo "🔑 Generating new age key pair..."
+age-keygen -o "$KEY_FILE" 2>&1
+chmod 600 "$KEY_FILE"
+
+age-keygen -y "$KEY_FILE" > "$PUB_FILE"
+echo ""
+echo "✅ Key pair generated!"
+echo "   Private key: $KEY_FILE"
+echo "   Public key:  $PUB_FILE"
+echo "   Share your public key: $(cat "$PUB_FILE")"
+echo ""
+echo "⚠️  BACK UP your private key! If lost, encrypted files cannot be recovered."
+```
+
+### scripts/batch-encrypt.sh — Batch Encrypt Sensitive Files
+
+```bash
+#!/bin/bash
+set -e
+
+DIR="${1:-.}"
+KEY_FILE="${AGE_KEY_FILE:-$HOME/.config/age/key.txt}"
+PUB_FILE="${AGE_PUB_FILE:-$HOME/.config/age/pubkey.txt}"
+
+if [ ! -f "$PUB_FILE" ]; then
+  echo "❌ No public key found at $PUB_FILE"
+  echo "   Run: bash scripts/keygen.sh"
+  exit 1
+fi
+
+PUBKEY=$(cat "$PUB_FILE")
+PATTERNS=("*.env" "*.pem" "*.key" "*.p12" "*.pfx" "*.jks" "*.secret" "*.credentials")
+COUNT=0
+
+echo "🔒 Scanning $DIR for sensitive files..."
+
+for pattern in "${PATTERNS[@]}"; do
+  while IFS= read -r -d '' file; do
+    # Skip already-encrypted files
+    [[ "$file" == *.age ]] && continue
+
+    OUTFILE="${file}.age"
+    if [ -f "$OUTFILE" ]; then
+      echo "   ⏭️  $file (already encrypted)"
+      continue
+    fi
+
+    age -r "$PUBKEY" -o "$OUTFILE" "$file"
+    echo "   ✅ $file → $OUTFILE"
+    COUNT=$((COUNT + 1))
+  done < <(find "$DIR" -name "$pattern" -type f -print0 2>/dev/null)
+done
+
+echo ""
+echo "🔒 Encrypted $COUNT file(s)"
+[ $COUNT -gt 0 ] && echo "   💡 Consider removing originals: find $DIR -name '*.env' -delete (etc.)"
+```
+
+### scripts/batch-decrypt.sh — Batch Decrypt
+
+```bash
+#!/bin/bash
+set -e
+
+DIR="${1:-.}"
+KEY_FILE="${AGE_KEY_FILE:-$HOME/.config/age/key.txt}"
+
+if [ ! -f "$KEY_FILE" ]; then
+  echo "❌ No private key found at $KEY_FILE"
+  echo "   Set AGE_KEY_FILE or place key at $KEY_FILE"
+  exit 1
+fi
+
+COUNT=0
+
+echo "🔓 Decrypting .age files in $DIR..."
+
+while IFS= read -r -d '' file; do
+  OUTFILE="${file%.age}"
+  if [ -f "$OUTFILE" ]; then
+    echo "   ⏭️  $file (decrypted file exists)"
+    continue
+  fi
+
+  age -d -i "$KEY_FILE" -o "$OUTFILE" "$file"
+  echo "   ✅ $file → $OUTFILE"
+  COUNT=$((COUNT + 1))
+done < <(find "$DIR" -name "*.age" -type f -print0 2>/dev/null)
+
+echo ""
+echo "🔓 Decrypted $COUNT file(s)"
 ```
 
 ## Configuration
 
-### Key Storage
-
-```bash
-# Default key location
-~/.age/key.txt
-
-# Custom location (set env var)
-export AGE_KEY_FILE="/path/to/key.txt"
-```
-
 ### Environment Variables
 
 ```bash
-# Default identity file for decryption
-export AGE_KEY_FILE="~/.age/key.txt"
+# Custom key location (default: ~/.config/age/key.txt)
+export AGE_KEY_FILE="$HOME/.config/age/key.txt"
 
-# For automation: passphrase from env (non-interactive)
-export AGE_PASSPHRASE="your-secret-passphrase"
+# Custom public key location
+export AGE_PUB_FILE="$HOME/.config/age/pubkey.txt"
+
+# Key directory
+export AGE_KEY_DIR="$HOME/.config/age"
 ```
 
-## Advanced Usage
+### .gitignore Integration
 
-### Encrypt + Upload to S3
+Add to your project's `.gitignore`:
 
-```bash
-bash scripts/run.sh encrypt --passphrase --input backup.tar.gz --output - | \
-  aws s3 cp - s3://my-bucket/backups/backup.tar.gz.age
-```
+```gitignore
+# Sensitive files (unencrypted)
+*.env
+*.pem
+*.key
+*.secret
+*.credentials
 
-### Scheduled Encrypted Backups (Cron)
-
-```bash
-# Add to crontab
-0 2 * * * AGE_PASSPHRASE="secret" bash /path/to/scripts/run.sh encrypt \
-  --passphrase --input /var/backups/daily.tar.gz \
-  --output /var/backups/encrypted/daily-$(date +\%Y\%m\%d).tar.gz.age
-```
-
-### Verify Encryption
-
-```bash
-# Check file is valid age-encrypted
-bash scripts/run.sh verify --input secret.txt.age
-# Output: ✅ Valid age-encrypted file (1234 bytes, created 2026-03-05)
+# Keep encrypted versions
+!*.age
 ```
 
 ## Troubleshooting
 
 ### Issue: "age: command not found"
 
-**Fix:**
-```bash
-bash scripts/install.sh
-# Or manually:
-# Ubuntu/Debian: sudo apt install age
-# Mac: brew install age
-# From source: go install filippo.io/age/cmd/...@latest
-```
+**Fix:** Run `bash scripts/install.sh` or install manually for your OS.
 
 ### Issue: "no identity matched any of the recipients"
 
-**Check:**
-1. You're using the correct private key: `age-keygen -y ~/.age/key.txt` shows the public key
-2. The file was encrypted for your public key
-3. Key file permissions: `chmod 600 ~/.age/key.txt`
+**Cause:** You're trying to decrypt with the wrong key.
 
-### Issue: "incorrect passphrase"
+**Fix:** Ensure you're using the private key that corresponds to the public key used for encryption:
+```bash
+# Check which public key your private key maps to
+age-keygen -y ~/.config/age/key.txt
+```
 
-**Fix:** Double-check your passphrase. age uses scrypt for passphrase-based encryption — there's no recovery if forgotten.
+### Issue: Lost private key
+
+**Unfortunately:** Files encrypted with a lost key cannot be recovered. This is by design — age has no key recovery mechanism.
+
+**Prevention:** Always back up `~/.config/age/key.txt` to a secure location (password manager, USB drive, printed paper key).
+
+### Issue: "permission denied" on key file
+
+**Fix:**
+```bash
+chmod 600 ~/.config/age/key.txt
+chmod 700 ~/.config/age/
+```
 
 ## Why age Over GPG?
 
 | Feature | age | GPG |
 |---------|-----|-----|
-| Setup time | 30 seconds | 30 minutes |
-| Config files | None | ~/.gnupg/* |
-| Key format | Simple text | Complex keyring |
-| Learning curve | Minimal | Steep |
-| Audit surface | ~3000 lines | ~300,000 lines |
+| Setup time | 10 seconds | 10 minutes |
+| Config files | None | ~/.gnupg/ (complex) |
+| Key format | One line | Keyring + trust model |
+| Learning curve | 3 commands | 50+ commands |
 | SSH key support | ✅ Built-in | ❌ No |
+| Passphrase mode | ✅ Simple | ✅ Complex |
+| Security | Modern (X25519, ChaCha20) | Legacy + Modern |
 
-## Dependencies
+## Key Principles
 
-- `age` (installed via scripts/install.sh)
-- `bash` (4.0+)
-- `tar` (for directory encryption)
-- Optional: `ssh` keys (for SSH-based encryption)
+1. **Simple** — 3 commands: `age-keygen`, `age -e`, `age -d`
+2. **No config** — No keyring, no trust model, no key servers
+3. **Composable** — Pipes with tar, gzip, ssh, etc.
+4. **SSH-compatible** — Use existing SSH keys for encryption
+5. **Modern crypto** — X25519, ChaCha20-Poly1305, HKDF
