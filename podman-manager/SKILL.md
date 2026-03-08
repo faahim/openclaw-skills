@@ -1,18 +1,18 @@
 ---
 name: podman-manager
 description: >-
-  Install, configure, and manage Podman containers — the daemonless Docker alternative with rootless support.
+  Install and manage Podman containers — rootless, daemonless Docker alternative with systemd integration and auto-updates.
 categories: [dev-tools, automation]
 dependencies: [bash, curl, podman]
 ---
 
-# Podman Manager
+# Podman Container Manager
 
 ## What This Does
 
-Manages Podman — a daemonless, rootless container engine that's a drop-in Docker replacement. Install Podman, run containers, build images, manage pods, set up systemd services, and migrate from Docker — all without a daemon running as root.
+Manage containers without Docker — Podman runs rootless (no daemon, no root), integrates natively with systemd, and supports auto-updates. This skill installs Podman, manages containers/pods/images, generates systemd unit files, and configures automatic container updates.
 
-**Example:** "Install Podman, run a Postgres container rootless, generate a systemd service so it auto-starts on boot."
+**Example:** "Run a Postgres container as a systemd service that auto-restarts and auto-updates its image weekly."
 
 ## Quick Start (5 minutes)
 
@@ -22,281 +22,294 @@ Manages Podman — a daemonless, rootless container engine that's a drop-in Dock
 bash scripts/install.sh
 ```
 
+This detects your OS (Debian/Ubuntu/Fedora/Arch/macOS) and installs Podman + dependencies.
+
 ### 2. Run Your First Container
 
 ```bash
-bash scripts/run.sh nginx --name my-web --port 8080:80
+bash scripts/run.sh run --name my-nginx --image docker.io/library/nginx:alpine --port 8080:80
 ```
 
-### 3. Check Running Containers
+### 3. Make It a Systemd Service
 
 ```bash
-bash scripts/run.sh list
+bash scripts/run.sh generate-service --name my-nginx
+# Creates ~/.config/systemd/user/container-my-nginx.service
+# Auto-starts on boot, auto-restarts on failure
 ```
 
 ## Core Workflows
 
-### Workflow 1: Install Podman
-
-**Use case:** Fresh installation on Ubuntu/Debian/Fedora/RHEL/Arch
+### Workflow 1: Run a Container
 
 ```bash
-bash scripts/install.sh
-
-# Verify installation
-podman --version
-podman info --format '{{.Host.Security.Rootless}}'
+bash scripts/run.sh run \
+  --name postgres-db \
+  --image docker.io/library/postgres:16 \
+  --port 5432:5432 \
+  --env POSTGRES_PASSWORD=mysecret \
+  --env POSTGRES_DB=myapp \
+  --volume pgdata:/var/lib/postgresql/data
 ```
 
 **Output:**
 ```
-podman version 5.x.x
-true
+✅ Container 'postgres-db' started
+   Image: docker.io/library/postgres:16
+   Ports: 5432 → 5432
+   Volume: pgdata → /var/lib/postgresql/data
 ```
 
-### Workflow 2: Run Containers
-
-**Use case:** Start containers (same syntax as Docker)
+### Workflow 2: List & Manage Containers
 
 ```bash
-# Run detached container with port mapping
-bash scripts/run.sh redis --name my-redis --port 6379:6379 --detach
-
-# Run with volume mount
-bash scripts/run.sh postgres:16 --name my-db \
-  --port 5432:5432 \
-  --env POSTGRES_PASSWORD=secret \
-  --volume pgdata:/var/lib/postgresql/data
-
-# Run interactive
-bash scripts/run.sh ubuntu:24.04 --interactive
-```
-
-### Workflow 3: Manage Containers
-
-```bash
-# List all containers
+# List running containers
 bash scripts/run.sh list
 
 # Stop a container
-bash scripts/run.sh stop my-redis
+bash scripts/run.sh stop --name postgres-db
 
 # Remove a container
-bash scripts/run.sh rm my-redis
+bash scripts/run.sh rm --name postgres-db
 
 # View logs
-bash scripts/run.sh logs my-db --follow
+bash scripts/run.sh logs --name postgres-db --tail 50
 
-# Execute command in running container
-bash scripts/run.sh exec my-db psql -U postgres
+# Execute command in container
+bash scripts/run.sh exec --name postgres-db -- psql -U postgres -c "SELECT 1"
+```
+
+### Workflow 3: Generate Systemd Service
+
+```bash
+bash scripts/run.sh generate-service --name postgres-db
+
+# Enable auto-start on login
+systemctl --user enable container-postgres-db.service
+
+# Start/stop via systemd
+systemctl --user start container-postgres-db.service
+systemctl --user stop container-postgres-db.service
+
+# Enable lingering (keeps services running after logout)
+loginctl enable-linger $USER
 ```
 
 **Output:**
 ```
-CONTAINER ID  IMAGE                  STATUS         PORTS                   NAMES
-a1b2c3d4e5f6  docker.io/library/pg   Up 2 minutes   0.0.0.0:5432->5432/tcp  my-db
-f6e5d4c3b2a1  docker.io/library/red  Up 5 minutes   0.0.0.0:6379->6379/tcp  my-redis
+✅ Systemd service created: ~/.config/systemd/user/container-postgres-db.service
+   Auto-restart: on-failure (max 3 retries)
+   Start on boot: enabled
+   Lingering: enabled
 ```
 
-### Workflow 4: Build Images
+### Workflow 4: Auto-Update Containers
 
 ```bash
-# Build from Dockerfile/Containerfile
-bash scripts/run.sh build --tag myapp:latest --file Containerfile .
+# Label a container for auto-update
+bash scripts/run.sh run \
+  --name my-app \
+  --image docker.io/myuser/myapp:latest \
+  --label io.containers.autoupdate=registry \
+  --port 3000:3000
 
-# Build multi-stage
-bash scripts/run.sh build --tag myapp:prod --target production .
+# Generate service + timer for auto-updates
+bash scripts/run.sh setup-autoupdate
+
+# Check what would update (dry run)
+podman auto-update --dry-run
+
+# Force update now
+podman auto-update
+```
+
+### Workflow 5: Create a Pod (Multi-Container)
+
+```bash
+# Create a pod (shared network namespace)
+bash scripts/run.sh create-pod --name my-stack --port 8080:80 --port 5432:5432
+
+# Add containers to the pod
+bash scripts/run.sh run --pod my-stack --name web --image docker.io/library/nginx:alpine
+bash scripts/run.sh run --pod my-stack --name db --image docker.io/library/postgres:16 \
+  --env POSTGRES_PASSWORD=secret
+
+# Containers in the pod share localhost
+# web can reach db at localhost:5432
+```
+
+### Workflow 6: Image Management
+
+```bash
+# Pull an image
+bash scripts/run.sh pull --image docker.io/library/redis:7
 
 # List images
 bash scripts/run.sh images
-```
-
-### Workflow 5: Pod Management
-
-**Use case:** Group related containers (like docker-compose but native)
-
-```bash
-# Create a pod with port mappings
-bash scripts/run.sh pod-create my-stack --port 8080:80 --port 5432:5432
-
-# Add containers to pod
-bash scripts/run.sh pod-add my-stack nginx
-bash scripts/run.sh pod-add my-stack postgres:16 \
-  --env POSTGRES_PASSWORD=secret
-
-# List pods
-bash scripts/run.sh pod-list
-
-# Stop/start pod (all containers together)
-bash scripts/run.sh pod-stop my-stack
-bash scripts/run.sh pod-start my-stack
-```
-
-### Workflow 6: Generate Systemd Services
-
-**Use case:** Auto-start containers on boot without a daemon
-
-```bash
-# Generate systemd unit for a container
-bash scripts/run.sh systemd my-db
-
-# Output: ~/.config/systemd/user/container-my-db.service
-# Enable auto-start:
-systemctl --user enable container-my-db.service
-systemctl --user start container-my-db.service
-
-# Generate for a pod (all containers)
-bash scripts/run.sh systemd-pod my-stack
-```
-
-### Workflow 7: Docker Compose Compatibility
-
-**Use case:** Run existing docker-compose.yml files with Podman
-
-```bash
-# Install podman-compose if needed
-bash scripts/install-compose.sh
-
-# Run compose file
-podman-compose up -d
-
-# Or use podman's built-in kube play
-bash scripts/run.sh compose-up docker-compose.yml
-```
-
-### Workflow 8: Rootless Setup & Security
-
-```bash
-# Check rootless status
-bash scripts/run.sh security-check
-
-# Configure rootless networking (slirp4netns/pasta)
-bash scripts/run.sh configure-rootless
-
-# Set up subuid/subgid ranges
-bash scripts/run.sh setup-userns
-```
-
-**Output:**
-```
-🔐 Podman Security Report
-├── Rootless: ✅ Enabled
-├── User namespace: ✅ /etc/subuid configured (65536 UIDs)
-├── Network: ✅ pasta (recommended)
-├── Seccomp: ✅ Default profile active
-└── SELinux/AppArmor: ✅ Enforcing
-```
-
-### Workflow 9: Image Management
-
-```bash
-# Pull from multiple registries
-bash scripts/run.sh pull docker.io/library/nginx
-bash scripts/run.sh pull ghcr.io/owner/image:tag
-bash scripts/run.sh pull quay.io/org/image
 
 # Prune unused images
-bash scripts/run.sh prune-images
+bash scripts/run.sh prune --images
 
-# Export/import images
-bash scripts/run.sh save myapp:latest -o myapp.tar
-bash scripts/run.sh load -i myapp.tar
+# Prune everything (stopped containers + unused images + volumes)
+bash scripts/run.sh prune --all
 ```
 
-### Workflow 10: Migrate from Docker
+### Workflow 7: Backup & Restore
 
 ```bash
-# Check Docker compatibility
-bash scripts/run.sh docker-compat-check
+# Export a container as tarball
+bash scripts/run.sh backup --name postgres-db --output /backups/postgres-db.tar
 
-# Create alias (docker → podman)
-bash scripts/run.sh setup-docker-alias
+# Import/restore
+bash scripts/run.sh restore --name postgres-db --input /backups/postgres-db.tar
 
-# Import Docker images
-bash scripts/run.sh import-docker-images
+# Backup a volume
+bash scripts/run.sh backup-volume --volume pgdata --output /backups/pgdata.tar.gz
 ```
 
 ## Configuration
 
-### Registries Configuration
+### Environment Variables
 
 ```bash
-# Edit registries.conf
-cat > ~/.config/containers/registries.conf << 'EOF'
-unqualified-search-registries = ["docker.io", "ghcr.io", "quay.io"]
+# Custom registries (optional)
+export PODMAN_REGISTRIES="docker.io,quay.io,ghcr.io"
+
+# Default network mode
+export PODMAN_NETWORK="bridge"
+
+# Storage driver (default: overlay)
+export PODMAN_STORAGE_DRIVER="overlay"
+```
+
+### Registry Configuration
+
+```bash
+# Login to a registry
+podman login docker.io
+
+# Login to GitHub Container Registry
+podman login ghcr.io -u USERNAME --password-stdin <<< "$GITHUB_TOKEN"
+
+# Use registries.conf for custom mirrors
+cat > ~/.config/containers/registries.conf <<'EOF'
+unqualified-search-registries = ["docker.io", "quay.io", "ghcr.io"]
 
 [[registry]]
 location = "docker.io"
-
-[[registry]]
-location = "ghcr.io"
-
-[[registry]]
-location = "quay.io"
 EOF
 ```
 
-### Storage Configuration
+## Advanced Usage
+
+### Docker Compose Compatibility
 
 ```bash
-# Set custom storage location (rootless)
-cat > ~/.config/containers/storage.conf << 'EOF'
-[storage]
-driver = "overlay"
-rootless_storage_path = "$HOME/.local/share/containers/storage"
+# Podman supports docker-compose via podman-compose
+pip install podman-compose
 
-[storage.options.overlay]
-mount_program = "/usr/bin/fuse-overlayfs"
-EOF
+# Run docker-compose files with Podman
+podman-compose -f docker-compose.yml up -d
+podman-compose -f docker-compose.yml down
+```
+
+### Rootless Networking
+
+```bash
+# Podman rootless uses slirp4netns by default
+# For better performance, use pasta (if available)
+bash scripts/run.sh run \
+  --name my-app \
+  --image docker.io/myuser/myapp \
+  --network pasta \
+  --port 8080:8080
+```
+
+### Health Checks
+
+```bash
+bash scripts/run.sh run \
+  --name my-api \
+  --image docker.io/myuser/myapi \
+  --port 3000:3000 \
+  --healthcheck "curl -f http://localhost:3000/health || exit 1" \
+  --healthcheck-interval 30s \
+  --healthcheck-retries 3
+```
+
+### Resource Limits
+
+```bash
+bash scripts/run.sh run \
+  --name my-app \
+  --image docker.io/myuser/myapp \
+  --memory 512m \
+  --cpus 1.5
 ```
 
 ## Troubleshooting
-
-### Issue: "WARN[0000] "/" is not a shared mount"
-
-**Fix:**
-```bash
-sudo mount --make-rshared /
-# Make permanent:
-echo '/ / none rshared 0 0' | sudo tee -a /etc/fstab
-```
 
 ### Issue: "permission denied" on rootless
 
 **Fix:**
 ```bash
-# Ensure subuid/subgid is configured
-grep $(whoami) /etc/subuid || sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $(whoami)
+# Ensure user namespaces are enabled
+sudo sysctl -w kernel.unprivileged_userns_clone=1
+echo "kernel.unprivileged_userns_clone=1" | sudo tee /etc/sysctl.d/99-podman.conf
+
+# Set up subuid/subgid
+sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 $USER
 podman system migrate
 ```
 
-### Issue: Port < 1024 in rootless mode
+### Issue: Port binding fails on rootless (< 1024)
 
 **Fix:**
 ```bash
-# Allow unprivileged port binding
-sudo sysctl net.ipv4.ip_unprivileged_port_start=80
-# Make permanent
-echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/podman-ports.conf
+# Allow binding to low ports
+sudo sysctl -w net.ipv4.ip_unprivileged_port_start=80
+echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee -a /etc/sysctl.d/99-podman.conf
 ```
 
-### Issue: Slow image pulls
+### Issue: Container can't resolve DNS
 
-**Fix:** Configure registry mirrors in `~/.config/containers/registries.conf`
+**Fix:**
+```bash
+# Check /etc/resolv.conf inside container
+podman exec my-container cat /etc/resolv.conf
+
+# Override DNS
+bash scripts/run.sh run --name my-app --image myapp --dns 8.8.8.8 --dns 1.1.1.1
+```
+
+### Issue: Systemd service won't start after reboot
+
+**Fix:**
+```bash
+# Enable lingering for your user
+loginctl enable-linger $USER
+
+# Verify
+loginctl show-user $USER | grep Linger
+```
+
+## Migration from Docker
+
+```bash
+# Podman is CLI-compatible with Docker
+# Most docker commands work by replacing 'docker' with 'podman'
+alias docker=podman
+
+# Import Docker images
+podman pull docker.io/library/nginx:alpine
+# or from a Docker save
+docker save myimage:latest | podman load
+```
 
 ## Key Principles
 
-1. **Rootless by default** — No daemon, no root. Containers run as your user.
-2. **Docker-compatible** — Same CLI syntax, same images, same Dockerfiles.
-3. **Systemd-native** — Generate proper service units, no daemon needed.
-4. **Pod support** — Group containers like Kubernetes pods.
-5. **OCI-compliant** — Standard container images, no lock-in.
-
-## Dependencies
-
-- `bash` (4.0+)
-- `curl` (for installation)
-- `podman` (installed by skill)
-- `fuse-overlayfs` (for rootless storage, auto-installed)
-- Optional: `podman-compose` (for docker-compose compatibility)
-- Optional: `buildah` (for advanced image building)
+1. **Rootless by default** — No daemon, no root required
+2. **Systemd-native** — Generate proper service files, not hacks
+3. **Auto-update** — Label containers, Podman handles the rest
+4. **OCI-compatible** — Same images as Docker, interchangeable
+5. **Pod support** — Group containers with shared networking

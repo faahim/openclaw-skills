@@ -1,33 +1,35 @@
-# Listing Copy: Podman Manager
+# Listing Copy: Podman Container Manager
 
 ## Metadata
 - **Type:** Skill
 - **Name:** podman-manager
-- **Display Name:** Podman Manager
+- **Display Name:** Podman Container Manager
 - **Categories:** [dev-tools, automation]
+- **Price:** $12
+- **Dependencies:** [bash, curl, podman]
 - **Icon:** 🐙
-- **Dependencies:** [bash, curl]
 
 ## Tagline
 
-Manage rootless containers with Podman — the daemonless Docker alternative
+Rootless container management — Run Docker images without Docker, with systemd integration and auto-updates
 
 ## Description
 
-Running containers shouldn't require a root daemon eating resources in the background. Podman gives you Docker-compatible container management without the daemon, running everything rootless by default.
+Running containers shouldn't require root access or a background daemon eating your resources. Podman is the rootless, daemonless alternative to Docker — and this skill makes your OpenClaw agent a container management expert.
 
-Podman Manager handles the full lifecycle: install Podman on any Linux distro or macOS, run containers with Docker-identical syntax, group them into pods, and generate systemd services so they auto-start on boot — no daemon needed.
+**Podman Manager** installs Podman on any Linux distro or macOS, runs containers with a single command, generates systemd service files for auto-restart on boot, and configures automatic image updates. It's fully Docker-compatible — same images, same CLI patterns, no migration headaches.
 
 **What it does:**
-- 🐙 Install Podman on Ubuntu/Debian/Fedora/RHEL/Arch/macOS
-- 📦 Run containers with Docker-compatible CLI (same images, same Dockerfiles)
-- 🔗 Create pods to group related containers (like docker-compose, but native)
-- ⚙️ Generate systemd services for auto-start without a daemon
-- 🔐 Configure rootless mode with user namespaces
-- 🐳 Migrate from Docker (import images, set up aliases, socket compatibility)
-- 🧹 Manage images, volumes, and storage with simple commands
+- 🐙 Install Podman (auto-detects Debian/Ubuntu/Fedora/Arch/macOS)
+- 🚀 Run containers with ports, volumes, env vars, and health checks
+- ⚙️ Generate systemd services — containers survive reboots
+- 🔄 Auto-update containers on a weekly schedule
+- 📦 Create pods for multi-container stacks (shared networking)
+- 💾 Backup/restore containers and volumes
+- 🧹 Prune unused images, containers, and volumes
+- 🔒 Rootless by default — no sudo needed for daily operations
 
-Perfect for developers and sysadmins who want container management without the overhead of Docker's daemon, or anyone moving to rootless containers for better security.
+Perfect for developers, sysadmins, and homelabbers who want container management without Docker Desktop's overhead or licensing concerns.
 
 ## Quick Start Preview
 
@@ -35,22 +37,28 @@ Perfect for developers and sysadmins who want container management without the o
 # Install Podman
 bash scripts/install.sh
 
-# Run a container (same as Docker!)
-bash scripts/run.sh nginx --name web --port 8080:80
+# Run a container
+bash scripts/run.sh run --name web --image nginx:alpine --port 8080:80
 
-# Auto-start on boot via systemd
-bash scripts/run.sh systemd web
+# Make it a persistent systemd service
+bash scripts/run.sh generate-service --name web
 ```
 
 ## Core Capabilities
 
-1. One-command install — Detects distro, installs Podman + dependencies
-2. Container management — Run, stop, remove, logs, exec (Docker-identical syntax)
-3. Pod management — Group containers, shared networking, lifecycle control
-4. Systemd integration — Generate service units, auto-start without daemon
-5. Rootless by default — User namespace isolation, no root required
-6. Docker migration — Import images, alias docker→podman, socket compatibility
-7. Image management — Pull, build, save, load, prune across registries
-8. Security auditing — Check rootless status, namespaces, seccomp, storage
-9. Compose support — Run docker-compose.yml via podman-compose
-10. Multi-registry — Docker Hub, GitHub Container Registry, Quay.io
+1. **Auto-install** — Detects OS, installs Podman + dependencies in one command
+2. **Container lifecycle** — Run, stop, remove, exec, logs — all via scripts
+3. **Systemd integration** — Generate service files, enable on boot, auto-restart on failure
+4. **Auto-updates** — Label containers, schedule weekly image pulls + restarts
+5. **Pod management** — Group containers with shared networking (like docker-compose)
+6. **Rootless** — No daemon, no root — secure by default
+7. **Docker-compatible** — Same images, same registries, drop-in replacement
+8. **Backup & restore** — Export containers and volumes as tarballs
+9. **Health checks** — Monitor container health with custom commands
+10. **Resource limits** — Set memory and CPU caps per container
+
+## Dependencies
+- `bash` (4.0+)
+- `curl` (for installation)
+- `podman` (installed by skill)
+- `systemd` (for service generation, optional on macOS)

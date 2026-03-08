@@ -1,6 +1,7 @@
 #!/bin/bash
-# Podman Manager — Install Script
-# Installs Podman and configures rootless container runtime
+# Podman Installation Script
+# Detects OS and installs Podman + dependencies
+
 set -euo pipefail
 
 RED='\033[0;31m'
@@ -8,176 +9,146 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-log()  { echo -e "${GREEN}[✓]${NC} $*"; }
-warn() { echo -e "${YELLOW}[!]${NC} $*"; }
-err()  { echo -e "${RED}[✗]${NC} $*" >&2; }
+log() { echo -e "${GREEN}[podman-manager]${NC} $1"; }
+warn() { echo -e "${YELLOW}[podman-manager]${NC} $1"; }
+error() { echo -e "${RED}[podman-manager]${NC} $1" >&2; }
+
+# Check if Podman is already installed
+if command -v podman &>/dev/null; then
+    CURRENT_VERSION=$(podman --version | awk '{print $3}')
+    log "Podman $CURRENT_VERSION is already installed"
+    
+    read -p "Reinstall/upgrade? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log "Skipping installation"
+        exit 0
+    fi
+fi
 
 # Detect OS
 detect_os() {
-  if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    OS_ID="${ID}"
-    OS_VERSION="${VERSION_ID:-}"
-    OS_LIKE="${ID_LIKE:-$ID}"
-  elif [ "$(uname)" = "Darwin" ]; then
-    OS_ID="macos"
-    OS_LIKE="macos"
-  else
-    err "Unsupported OS"
-    exit 1
-  fi
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        OS=$ID
+        OS_VERSION=$VERSION_ID
+    elif [[ "$(uname)" == "Darwin" ]]; then
+        OS="macos"
+        OS_VERSION=$(sw_vers -productVersion)
+    else
+        error "Unsupported operating system"
+        exit 1
+    fi
 }
 
-# Check if podman is already installed
-check_existing() {
-  if command -v podman &>/dev/null; then
-    local ver
-    ver=$(podman --version 2>/dev/null | awk '{print $NF}')
-    warn "Podman $ver is already installed"
-    read -rp "Reinstall/upgrade? [y/N] " ans
-    [[ "$ans" =~ ^[Yy] ]] || { log "Keeping existing installation"; exit 0; }
-  fi
-}
-
-# Install on Debian/Ubuntu
-install_debian() {
-  log "Installing Podman on Debian/Ubuntu..."
-  
-  # Ubuntu 24.04+ and Debian 12+ have podman in repos
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq podman fuse-overlayfs slirp4netns uidmap 2>/dev/null || {
-    # Fallback: add kubic repo for older distros
-    warn "Adding Kubic repository for older distro..."
-    local os_ver="${OS_ID}_${OS_VERSION}"
-    echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/unstable/${os_ver}/ /" \
-      | sudo tee /etc/apt/sources.list.d/podman.list
-    curl -fsSL "https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/unstable/${os_ver}/Release.key" \
-      | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/podman.gpg
+install_debian_ubuntu() {
+    log "Installing Podman on $OS $OS_VERSION..."
+    
+    # Add Podman repository for older Ubuntu versions
+    if [[ "$OS" == "ubuntu" ]] && [[ "${OS_VERSION%%.*}" -lt 22 ]]; then
+        warn "Ubuntu < 22.04 detected — adding Kubic repository"
+        . /etc/os-release
+        sudo sh -c "echo 'deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/xUbuntu_${VERSION_ID}/ /' > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list"
+        curl -fsSL "https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable/xUbuntu_${VERSION_ID}/Release.key" | sudo apt-key add -
+    fi
+    
     sudo apt-get update -qq
-    sudo apt-get install -y -qq podman fuse-overlayfs slirp4netns uidmap
-  }
+    sudo apt-get install -y -qq podman slirp4netns fuse-overlayfs uidmap
+    
+    # Install podman-compose
+    if command -v pip3 &>/dev/null; then
+        pip3 install --user podman-compose 2>/dev/null || warn "podman-compose install failed (optional)"
+    fi
 }
 
-# Install on Fedora/RHEL/CentOS
 install_fedora() {
-  log "Installing Podman on Fedora/RHEL..."
-  sudo dnf install -y podman fuse-overlayfs slirp4netns
+    log "Installing Podman on Fedora $OS_VERSION..."
+    sudo dnf install -y podman podman-compose slirp4netns fuse-overlayfs
 }
 
-# Install on Arch
 install_arch() {
-  log "Installing Podman on Arch Linux..."
-  sudo pacman -Sy --noconfirm podman fuse-overlayfs slirp4netns
+    log "Installing Podman on Arch Linux..."
+    sudo pacman -Sy --noconfirm podman slirp4netns fuse-overlayfs
+    pip install --user podman-compose 2>/dev/null || warn "podman-compose install failed (optional)"
 }
 
-# Install on macOS
 install_macos() {
-  log "Installing Podman on macOS..."
-  if command -v brew &>/dev/null; then
+    log "Installing Podman on macOS $OS_VERSION..."
+    
+    if ! command -v brew &>/dev/null; then
+        error "Homebrew is required. Install from https://brew.sh"
+        exit 1
+    fi
+    
     brew install podman
+    
     log "Initializing Podman machine..."
-    podman machine init --cpus 2 --memory 2048 --disk-size 20
-    podman machine start
-  else
-    err "Homebrew required. Install from https://brew.sh"
-    exit 1
-  fi
+    podman machine init 2>/dev/null || warn "Podman machine already initialized"
+    podman machine start 2>/dev/null || warn "Podman machine already running"
 }
 
-# Configure rootless
-configure_rootless() {
-  log "Configuring rootless containers..."
-  
-  # Ensure subuid/subgid
-  if ! grep -q "^$(whoami):" /etc/subuid 2>/dev/null; then
-    sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$(whoami)" 2>/dev/null || true
-    log "Configured subuid/subgid ranges"
-  fi
-  
-  # Create config directories
-  mkdir -p ~/.config/containers
-  
-  # Set up registries (search Docker Hub, GitHub, Quay by default)
-  if [ ! -f ~/.config/containers/registries.conf ]; then
-    cat > ~/.config/containers/registries.conf << 'REGEOF'
-unqualified-search-registries = ["docker.io", "ghcr.io", "quay.io"]
-REGEOF
-    log "Created registries.conf"
-  fi
-  
-  # Storage config for rootless
-  if [ ! -f ~/.config/containers/storage.conf ]; then
-    cat > ~/.config/containers/storage.conf << 'STOREOF'
-[storage]
-driver = "overlay"
-
-[storage.options.overlay]
-mount_program = "/usr/bin/fuse-overlayfs"
-STOREOF
-    log "Created storage.conf"
-  fi
-  
-  # Enable lingering for systemd user services
-  if command -v loginctl &>/dev/null; then
-    loginctl enable-linger "$(whoami)" 2>/dev/null || true
-    log "Enabled systemd linger (containers survive logout)"
-  fi
-}
-
-# Verify installation
-verify() {
-  echo ""
-  log "Podman installed successfully!"
-  echo ""
-  podman --version
-  echo ""
-  
-  # Quick test
-  log "Running test container..."
-  if podman run --rm docker.io/library/alpine echo "Hello from Podman!" 2>/dev/null; then
-    log "Container runtime working correctly"
-  else
-    warn "Test container failed — check 'podman info' for details"
-  fi
-  
-  echo ""
-  log "Rootless status:"
-  podman info --format '  Rootless: {{.Host.Security.Rootless}}'
-  podman info --format '  Storage driver: {{.Store.GraphDriverName}}'
-  podman info --format '  Storage root: {{.Store.GraphRoot}}'
-  echo ""
-  log "Ready! Try: podman run -d --name test -p 8080:80 nginx"
+setup_rootless() {
+    log "Configuring rootless environment..."
+    
+    # Ensure subuid/subgid are set
+    if ! grep -q "^$USER:" /etc/subuid 2>/dev/null; then
+        sudo usermod --add-subuids 100000-165535 --add-subgids 100000-165535 "$USER"
+        log "Added subuid/subgid mappings for $USER"
+    fi
+    
+    # Create containers config directory
+    mkdir -p ~/.config/containers
+    
+    # Set up default registries if not exists
+    if [[ ! -f ~/.config/containers/registries.conf ]]; then
+        cat > ~/.config/containers/registries.conf <<'EOF'
+unqualified-search-registries = ["docker.io", "quay.io", "ghcr.io"]
+EOF
+        log "Created default registries.conf"
+    fi
+    
+    # Enable lingering for systemd user services
+    if command -v loginctl &>/dev/null; then
+        loginctl enable-linger "$USER" 2>/dev/null || warn "Could not enable lingering (needs systemd)"
+    fi
 }
 
 # Main
-main() {
-  echo "🐙 Podman Manager — Installation"
-  echo "================================="
-  echo ""
-  
-  detect_os
-  check_existing
-  
-  case "$OS_ID" in
-    ubuntu|debian|pop|linuxmint) install_debian ;;
-    fedora|rhel|centos|rocky|alma) install_fedora ;;
-    arch|manjaro|endeavouros) install_arch ;;
-    macos) install_macos ;;
-    *)
-      if [[ "$OS_LIKE" == *"debian"* ]]; then
-        install_debian
-      elif [[ "$OS_LIKE" == *"fedora"* ]] || [[ "$OS_LIKE" == *"rhel"* ]]; then
-        install_fedora
-      else
-        err "Unsupported distro: $OS_ID"
-        err "Install manually: https://podman.io/docs/installation"
-        exit 1
-      fi
-      ;;
-  esac
-  
-  configure_rootless
-  verify
-}
+detect_os
 
-main "$@"
+case $OS in
+    ubuntu|debian|linuxmint|pop)
+        install_debian_ubuntu
+        ;;
+    fedora|centos|rhel|rocky|alma)
+        install_fedora
+        ;;
+    arch|manjaro|endeavouros)
+        install_arch
+        ;;
+    macos)
+        install_macos
+        ;;
+    *)
+        error "Unsupported OS: $OS"
+        error "Manual install: https://podman.io/getting-started/installation"
+        exit 1
+        ;;
+esac
+
+# Post-install setup (Linux only)
+if [[ "$OS" != "macos" ]]; then
+    setup_rootless
+fi
+
+# Verify installation
+if command -v podman &>/dev/null; then
+    VERSION=$(podman --version | awk '{print $3}')
+    log "✅ Podman $VERSION installed successfully"
+    log ""
+    log "Quick test: podman run --rm docker.io/library/hello-world"
+    log "Run containers: bash scripts/run.sh run --name test --image nginx:alpine --port 8080:80"
+else
+    error "❌ Installation failed"
+    exit 1
+fi
