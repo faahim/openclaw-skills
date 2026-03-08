@@ -1,61 +1,70 @@
-# Listing Copy: SOPS Secrets Manager
+# Listing Copy: SOPS Secret Manager
 
 ## Metadata
 - **Type:** Skill
 - **Name:** sops-secrets
-- **Display Name:** SOPS Secrets Manager
+- **Display Name:** SOPS Secret Manager
 - **Categories:** [security, dev-tools]
+- **Price:** $12
+- **Dependencies:** [sops, age, bash, jq]
 - **Icon:** 🔐
-- **Dependencies:** [sops, age]
 
 ## Tagline
 
-Encrypt secrets in your config files — store API keys safely in git with Mozilla SOPS
+Encrypt secrets in config files — commit safely to git, decrypt on deploy
 
 ## Description
 
-Committing secrets to git is one of the most common security mistakes in software development. Leaked API keys, database passwords, and tokens cost companies millions every year. You need a way to keep secrets in your repo — encrypted.
+Hardcoding API keys and passwords in config files is a ticking time bomb. One accidental git push and your secrets are public. You need encryption that's developer-friendly.
 
-**SOPS Secrets Manager** brings Mozilla SOPS to your OpenClaw agent. Encrypt YAML, JSON, ENV, and INI files with age encryption. Secrets stay encrypted in git and are decrypted only at runtime. No external services, no cloud dependencies — everything runs locally.
+SOPS Secret Manager sets up Mozilla SOPS with age encryption so your secrets stay encrypted in git while keys remain readable. No external vault service, no monthly fees — everything runs locally on your machine.
 
 **What it does:**
-- 🔐 Encrypt/decrypt config files with one command
-- 🔑 Generate and manage age encryption keys
-- 📁 Initialize SOPS in any project with `.sops.yaml`
-- 🔄 Rotate encryption keys when team members leave
-- 🏗️ Multi-environment support (dev/staging/prod)
-- 🛡️ Git pre-commit hook blocks unencrypted secrets
-- 📊 Audit which files are encrypted and who has access
-- 🎯 Partial encryption — encrypt only sensitive keys, keep structure readable
+- 🔐 Encrypt values in YAML, JSON, and .env files (keys stay readable)
+- 🔑 Generate and manage age encryption keys for your team
+- 📝 Edit encrypted files inline — decrypts in editor, re-encrypts on save
+- 🔄 Rotate keys when team members join or leave
+- 📤 Export decrypted secrets as environment variables for local dev
+- 🔍 Audit projects for unencrypted secrets and misconfigurations
+- 🔀 Git diff integration — see decrypted changes in `git diff`
+- 🏗️ Multi-environment support (dev/staging/prod with separate keys)
 
-Perfect for developers, DevOps engineers, and teams who want to stop using `.env.example` files and start managing secrets properly.
+Perfect for developers and teams who want simple, git-native secret management without the complexity of HashiCorp Vault or AWS Secrets Manager.
 
 ## Quick Start Preview
 
 ```bash
-# Install SOPS + age
+# Install sops + age
 bash scripts/install.sh
 
-# Generate encryption key
-bash scripts/setup-keys.sh
+# Generate your key
+bash scripts/setup-key.sh
 
-# Initialize in your project
-bash scripts/init-project.sh /path/to/project
+# Encrypt secrets
+bash scripts/encrypt.sh secrets.yaml
 
-# Encrypt a secrets file
-sops encrypt -i secrets/database.yaml
-# → File encrypted in-place, safe to commit
+# Edit encrypted file
+bash scripts/edit.sh secrets.yaml
 ```
 
 ## Core Capabilities
 
-1. Secret encryption — Encrypt YAML/JSON/ENV/INI files with Mozilla SOPS
-2. Age key management — Generate, rotate, and manage modern encryption keys
-3. Project initialization — One-command SOPS setup with .sops.yaml config
-4. Key rotation — Re-encrypt all files when team members change
-5. Multi-environment — Separate keys for dev/staging/prod
-6. Partial encryption — Encrypt only sensitive fields, keep structure visible
-7. Git hooks — Pre-commit hook blocks unencrypted secrets from being committed
-8. Encryption audit — Scan projects for unencrypted secrets and key coverage
-9. CI/CD ready — Decrypt at deploy time with environment variables
-10. Team management — Add/remove recipients without re-sharing keys
+1. File encryption — Encrypt YAML, JSON, and .env files in-place
+2. Key management — Generate, distribute, and rotate age encryption keys
+3. Team support — Multiple recipients can decrypt with their own keys
+4. Inline editing — Edit encrypted files without manual decrypt/re-encrypt
+5. Env export — Load decrypted secrets as shell environment variables
+6. Git integration — Decrypted diffs, safe commits
+7. Multi-environment — Separate keys for dev/staging/production
+8. Key rotation — Re-encrypt everything when team membership changes
+9. Secret auditing — Scan for unencrypted secrets and misconfigurations
+10. CI/CD ready — Decrypt at deploy time with a single env var
+
+## Dependencies
+- `sops` (3.8+)
+- `age` (1.1+)
+- `bash` (4.0+)
+- `jq`
+
+## Installation Time
+**5 minutes** — auto-installs sops + age, generates key, ready to encrypt

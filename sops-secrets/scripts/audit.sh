@@ -1,56 +1,64 @@
 #!/bin/bash
+# Audit project for secret management issues
 set -euo pipefail
 
-# Audit SOPS encryption status in a project
-
 PROJECT_DIR="${1:-.}"
+ISSUES=0
 
-echo "📊 SOPS Encryption Audit"
-echo "========================"
-echo "Project: $(cd "$PROJECT_DIR" && pwd)"
+echo "🔍 Auditing secrets in $PROJECT_DIR..."
 echo ""
 
-TOTAL=0
-ENCRYPTED=0
-UNENCRYPTED=0
-WARNINGS=()
+# Check .sops.yaml exists
+if [ ! -f "$PROJECT_DIR/.sops.yaml" ]; then
+  echo "❌ CRITICAL: No .sops.yaml found — secrets are not being encrypted!"
+  ISSUES=$((ISSUES + 1))
+fi
 
-printf "%-45s | %-12s | %-15s\n" "File" "Status" "Recipients"
-printf "%-45s-+-%-12s-+-%-15s\n" "---------------------------------------------" "------------" "---------------"
+# Check for unencrypted files that look like secrets
+echo "📋 Checking for unencrypted secret files..."
+for pattern in "secret" "credential" "password" "apikey" "token"; do
+  find "$PROJECT_DIR" -type f \( -name "*${pattern}*" -o -name "*.env" -o -name "*.env.*" \) \
+    ! -path "*/.git/*" ! -path "*/node_modules/*" ! -name ".sops.yaml" 2>/dev/null | while read -r file; do
+    if ! grep -q "ENC\[AES256_GCM" "$file" 2>/dev/null; then
+      if grep -qiE "(password|secret|key|token)\s*[:=]" "$file" 2>/dev/null; then
+        echo "  ⚠️  Potentially unencrypted: $file"
+        ISSUES=$((ISSUES + 1))
+      fi
+    fi
+  done
+done
 
-find "$PROJECT_DIR" -type f \( -name "*.yaml" -o -name "*.yml" -o -name "*.json" -o -name "*.env" -o -name "*.ini" \) \
-  ! -path "*/.git/*" ! -path "*/node_modules/*" ! -name ".sops.yaml" | sort | while read -r f; do
-
-  REL_PATH="${f#$PROJECT_DIR/}"
-  ((TOTAL++)) || true
-
-  if head -20 "$f" | grep -q "sops:" 2>/dev/null; then
-    # Count recipients
-    RECIPIENTS=$(grep -c "age1" "$f" 2>/dev/null || echo "?")
-    printf "%-45s | %-12s | %-15s\n" "$REL_PATH" "🔒 encrypted" "${RECIPIENTS} key(s)"
-    ((ENCRYPTED++)) || true
-
-    if [ "$RECIPIENTS" = "1" ]; then
-      echo "  ⚠️  Only 1 recipient — no backup key!" >&2
+# Check for files committed to git that shouldn't be
+if [ -d "$PROJECT_DIR/.git" ]; then
+  echo ""
+  echo "📋 Checking git for leaked secrets..."
+  
+  # Check if .env files are in .gitignore
+  if [ -f "$PROJECT_DIR/.gitignore" ]; then
+    if ! grep -q "\.env" "$PROJECT_DIR/.gitignore" 2>/dev/null; then
+      echo "  ⚠️  .env files not in .gitignore"
+      ISSUES=$((ISSUES + 1))
     fi
   else
-    # Check if file contains potential secrets
-    if grep -qiE '(password|secret|api.?key|token|private|credential)' "$f" 2>/dev/null; then
-      printf "%-45s | %-12s | %-15s\n" "$REL_PATH" "⚠️ PLAINTEXT" "has secrets!"
-      ((UNENCRYPTED++)) || true
-    fi
+    echo "  ⚠️  No .gitignore file found"
+    ISSUES=$((ISSUES + 1))
+  fi
+fi
+
+# List encrypted files
+echo ""
+echo "📋 Encrypted files found:"
+find "$PROJECT_DIR" -type f \( -name "*.yaml" -o -name "*.json" -o -name "*.env" -o -name "*.env.*" \) \
+  ! -name ".sops.yaml" ! -path "*/.git/*" ! -path "*/node_modules/*" 2>/dev/null | while read -r file; do
+  if grep -q "ENC\[AES256_GCM" "$file" 2>/dev/null; then
+    echo "  ✅ $file"
   fi
 done
 
+# Summary
 echo ""
-echo "Summary:"
-echo "  🔒 Encrypted files found (check output above)"
-echo "  ⚠️  Unencrypted files with potential secrets flagged"
-echo ""
-
-# Check .sops.yaml
-if [ -f "$PROJECT_DIR/.sops.yaml" ]; then
-  echo "✅ .sops.yaml found"
+if [ $ISSUES -eq 0 ]; then
+  echo "✅ Audit passed — no issues found."
 else
-  echo "⚠️  No .sops.yaml found — SOPS may not be configured for this project"
+  echo "⚠️  Found $ISSUES potential issue(s). Review above."
 fi

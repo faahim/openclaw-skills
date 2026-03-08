@@ -1,80 +1,76 @@
 #!/bin/bash
+# Initialize SOPS in a project directory
 set -euo pipefail
 
-# Initialize SOPS encryption in a project
-
 PROJECT_DIR="${1:-.}"
-PUBKEY="${2:-$(bash "$(dirname "$0")/get-pubkey.sh" 2>/dev/null || true)}"
+MULTI_ENV=false
 
-if [ -z "$PUBKEY" ]; then
-  echo "❌ No age public key found."
-  echo "   Run: bash scripts/setup-keys.sh"
-  echo "   Or pass key: bash scripts/init-project.sh /path age1..."
+shift || true
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --multi-env) MULTI_ENV=true; shift ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
+
+KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}"
+
+if [ ! -f "$KEY_FILE" ]; then
+  echo "❌ No age key found. Run 'bash scripts/setup-key.sh' first."
   exit 1
 fi
 
-cd "$PROJECT_DIR"
+PUBLIC_KEY=$(age-keygen -y "$KEY_FILE")
+SOPS_CONFIG="$PROJECT_DIR/.sops.yaml"
 
-# Create .sops.yaml
-if [ -f ".sops.yaml" ]; then
-  echo "⚠️  .sops.yaml already exists. Skipping."
-else
-  cat > .sops.yaml <<EOF
-# SOPS Configuration
-# Docs: https://github.com/getsops/sops
+if [ -f "$SOPS_CONFIG" ]; then
+  echo "⚠️  .sops.yaml already exists at $SOPS_CONFIG"
+  echo "   Delete it first to reinitialize."
+  exit 1
+fi
+
+if [ "$MULTI_ENV" = true ]; then
+  cat > "$SOPS_CONFIG" << EOF
+# SOPS configuration — multi-environment
 creation_rules:
-  # Encrypt files in secrets/ directory
-  - path_regex: secrets/.*\.(yaml|yml|json|env|ini)$
+  # Development secrets — all developers
+  - path_regex: secrets/dev/.*\.(yaml|json|env)$
     age: >-
-      ${PUBKEY}
+      ${PUBLIC_KEY}
 
-  # Encrypt .env.encrypted files
-  - path_regex: \.env\.encrypted$
+  # Staging secrets
+  - path_regex: secrets/staging/.*\.(yaml|json|env)$
     age: >-
-      ${PUBKEY}
+      ${PUBLIC_KEY}
 
-  # Partial encryption — only encrypt sensitive keys
-  # Uncomment to use:
-  # - path_regex: config/.*\.yaml$
-  #   encrypted_regex: "^(password|secret|key|token|api_key|private|credential)$"
-  #   age: >-
-  #     ${PUBKEY}
+  # Production secrets — restricted
+  - path_regex: secrets/prod/.*\.(yaml|json|env)$
+    age: >-
+      ${PUBLIC_KEY}
+
+  # Default: catch-all
+  - path_regex: .*\.(yaml|json|env)$
+    age: >-
+      ${PUBLIC_KEY}
 EOF
-  echo "✅ Created .sops.yaml"
-fi
 
-# Create secrets directory
-mkdir -p secrets
-echo "✅ Created secrets/ directory"
-
-# Update .gitignore
-GITIGNORE_ENTRIES=(
-  "# Decrypted secrets (NEVER commit these)"
-  "*.decrypted.*"
-  "secrets/*.decrypted"
-  "# age private keys"
-  ".age-keys/"
-)
-
-if [ -f ".gitignore" ]; then
-  if ! grep -q "Decrypted secrets" .gitignore; then
-    echo "" >> .gitignore
-    for entry in "${GITIGNORE_ENTRIES[@]}"; do
-      echo "$entry" >> .gitignore
-    done
-    echo "✅ Updated .gitignore"
-  fi
+  mkdir -p "$PROJECT_DIR/secrets/dev" "$PROJECT_DIR/secrets/staging" "$PROJECT_DIR/secrets/prod"
+  echo "✅ Multi-environment SOPS initialized in $PROJECT_DIR"
+  echo "   Created: secrets/dev/, secrets/staging/, secrets/prod/"
 else
-  for entry in "${GITIGNORE_ENTRIES[@]}"; do
-    echo "$entry" >> .gitignore
-  done
-  echo "✅ Created .gitignore"
+  cat > "$SOPS_CONFIG" << EOF
+# SOPS configuration
+creation_rules:
+  - path_regex: .*\.(yaml|json|env)$
+    age: >-
+      ${PUBLIC_KEY}
+EOF
+
+  echo "✅ SOPS initialized in $PROJECT_DIR"
 fi
 
+echo "   Config: $SOPS_CONFIG"
+echo "   Public key: $PUBLIC_KEY"
 echo ""
-echo "🎉 SOPS initialized in $(pwd)"
-echo ""
-echo "Next steps:"
-echo "  1. Create a secret file: echo 'api_key: sk-123' > secrets/keys.yaml"
-echo "  2. Encrypt it: sops encrypt -i secrets/keys.yaml"
-echo "  3. Commit the encrypted file: git add secrets/ .sops.yaml"
+echo "💡 Add more team members' public keys to .sops.yaml (comma-separated)"
+echo "   Then encrypt files with: bash scripts/encrypt.sh <file>"

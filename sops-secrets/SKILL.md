@@ -1,164 +1,149 @@
 ---
 name: sops-secrets
 description: >-
-  Encrypt and manage secrets in config files using Mozilla SOPS. Keep secrets safely in git.
+  Encrypt, decrypt, and manage application secrets in YAML/JSON/ENV files using Mozilla SOPS and age encryption.
 categories: [security, dev-tools]
-dependencies: [sops, age]
+dependencies: [sops, age, bash, jq]
 ---
 
-# SOPS Secrets Manager
+# SOPS Secret Manager
 
 ## What This Does
 
-Manages encrypted secrets using [Mozilla SOPS](https://github.com/getsops/sops) — the industry-standard tool for encrypting YAML, JSON, ENV, and INI files. Secrets stay encrypted in git, decrypted only at runtime.
+Manage encrypted secrets directly in your config files using Mozilla SOPS and age encryption. Secrets stay encrypted in git — only authorized keys can decrypt. No external secret management service needed.
 
-**Example:** Encrypt your `.env` file so API keys live safely in your repo. Decrypt on deploy. Rotate keys when needed.
+**Example:** "Encrypt all API keys in config.yaml, commit safely to git, decrypt on deploy."
 
 ## Quick Start (5 minutes)
 
-### 1. Install SOPS & Age
+### 1. Install Dependencies
 
 ```bash
 bash scripts/install.sh
 ```
 
 This installs:
-- **sops** (v3.9+) — encryption/decryption engine
-- **age** (v1.1+) — modern encryption key tool (simpler than GPG)
+- **sops** — Mozilla's Secrets OPerationS editor
+- **age** — Modern file encryption (simpler than GPG)
 
-### 2. Generate Your Encryption Key
+### 2. Generate Encryption Key
 
 ```bash
-bash scripts/setup-keys.sh
+bash scripts/setup-key.sh
+# Output:
+# ✅ Age key generated at ~/.config/sops/age/keys.txt
+# 📋 Public key: age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+# Add this public key to .sops.yaml in your project
 ```
 
-This creates:
-- `~/.config/sops/age/keys.txt` — your private key (NEVER share this)
-- Prints your public key (use this in `.sops.yaml`)
-
-### 3. Encrypt a File
+### 3. Initialize a Project
 
 ```bash
-# Encrypt a YAML file
-sops encrypt --age $(bash scripts/get-pubkey.sh) secrets.yaml > secrets.enc.yaml
-
-# Encrypt an .env file
-sops encrypt --age $(bash scripts/get-pubkey.sh) .env > .env.encrypted
+bash scripts/init-project.sh /path/to/your/project
+# Creates .sops.yaml with your age public key
 ```
 
-### 4. Decrypt a File
+### 4. Encrypt Your First Secret File
 
 ```bash
-# Decrypt to stdout
-sops decrypt secrets.enc.yaml
+bash scripts/encrypt.sh secrets.yaml
+# Encrypts in-place — values become ENC[AES256_GCM,...] while keys stay readable
+```
 
-# Decrypt to file
-sops decrypt secrets.enc.yaml > secrets.yaml
+### 5. Decrypt When Needed
 
-# Edit encrypted file in-place (opens $EDITOR)
-sops secrets.enc.yaml
+```bash
+bash scripts/decrypt.sh secrets.yaml
+# Decrypts in-place using your age key
 ```
 
 ## Core Workflows
 
-### Workflow 1: Encrypt Project Secrets
+### Workflow 1: Encrypt a New Secrets File
 
-**Use case:** Store secrets safely in your git repo
-
-```bash
-# Create .sops.yaml in project root (one-time setup)
-bash scripts/init-project.sh /path/to/project
-
-# This creates .sops.yaml with your age public key
-# and adds decrypted files to .gitignore
-
-# Encrypt all secret files
-bash scripts/encrypt-dir.sh /path/to/project/secrets/
-```
-
-**Output:**
-```
-✅ Encrypted secrets/database.yaml → secrets/database.yaml (encrypted in-place)
-✅ Encrypted secrets/api-keys.yaml → secrets/api-keys.yaml (encrypted in-place)
-📝 Updated .gitignore with decrypted file patterns
-```
-
-### Workflow 2: Rotate Encryption Keys
-
-**Use case:** Team member leaves, rotate all secrets
+**Use case:** You have plaintext secrets that need to be encrypted before committing to git.
 
 ```bash
-# Generate new key
-bash scripts/setup-keys.sh --name new-key
+# Create your secrets file
+cat > secrets.yaml << 'EOF'
+database:
+  host: db.example.com
+  password: super-secret-password
+api:
+  stripe_key: sk_live_abc123
+  sendgrid_key: SG.xyz789
+EOF
 
-# Re-encrypt all files with new key
-bash scripts/rotate-keys.sh /path/to/project --new-key $(bash scripts/get-pubkey.sh new-key)
+# Encrypt it
+bash scripts/encrypt.sh secrets.yaml
+
+# Result: values are encrypted, keys are readable
+# database:
+#     host: ENC[AES256_GCM,data:...,type:str]
+#     password: ENC[AES256_GCM,data:...,type:str]
 ```
 
-**Output:**
-```
-🔄 Rotating keys for 5 encrypted files...
-✅ secrets/database.yaml — re-encrypted
-✅ secrets/api-keys.yaml — re-encrypted
-✅ secrets/oauth.yaml — re-encrypted
-✅ .env.encrypted — re-encrypted
-✅ config/prod.yaml — re-encrypted
-🔑 Old key can now be safely revoked
-```
+### Workflow 2: Edit Encrypted Secrets
 
-### Workflow 3: Multi-Environment Secrets
-
-**Use case:** Different secrets for dev/staging/prod
+**Use case:** Update a secret value without manually decrypting/re-encrypting.
 
 ```bash
-# Set up environment-specific encryption
-bash scripts/init-multienv.sh /path/to/project
-
-# This creates:
-# .sops.yaml with path-based rules:
-#   - secrets/dev/* → dev team key
-#   - secrets/staging/* → staging key
-#   - secrets/prod/* → prod key (restricted)
+bash scripts/edit.sh secrets.yaml
+# Opens in $EDITOR with decrypted values
+# On save, automatically re-encrypts
 ```
 
-### Workflow 4: Decrypt for CI/CD
+### Workflow 3: Rotate Encryption Keys
 
-**Use case:** Decrypt secrets in GitHub Actions / CI pipelines
+**Use case:** Team member leaves, need to re-encrypt with new keys.
 
 ```bash
-# Export age key as env var in CI
-export SOPS_AGE_KEY="AGE-SECRET-KEY-1..."
-
-# Decrypt all secrets before deploy
-bash scripts/decrypt-all.sh /path/to/project/secrets/
-
-# Or decrypt a single file to env vars
-eval $(sops decrypt --output-type dotenv secrets.enc.env)
+bash scripts/rotate-keys.sh /path/to/project --remove-key "age1oldkey..." --add-key "age1newkey..."
+# Re-encrypts all secret files with updated key set
 ```
 
-### Workflow 5: Audit Encrypted Files
+### Workflow 4: Encrypt .env Files
 
-**Use case:** Check which files are encrypted and with which keys
+**Use case:** Protect environment variable files.
 
 ```bash
-bash scripts/audit.sh /path/to/project
+# Encrypt a .env file
+bash scripts/encrypt.sh .env.production
+
+# Decrypt for deployment
+bash scripts/decrypt.sh .env.production --output .env
 ```
 
-**Output:**
+### Workflow 5: Multi-Environment Secrets
+
+**Use case:** Different keys for dev/staging/production.
+
+```bash
+bash scripts/init-project.sh . --multi-env
+# Creates .sops.yaml with path-based rules:
+# - secrets/dev/* → dev team keys
+# - secrets/staging/* → staging keys  
+# - secrets/prod/* → prod team keys only
 ```
-📊 SOPS Encryption Audit
-========================
-Total encrypted files: 8
-Encryption method: age
 
-File                          | Recipients | Last Modified
-------------------------------|------------|---------------
-secrets/database.yaml         | 2 keys     | 2026-03-05
-secrets/api-keys.yaml         | 2 keys     | 2026-03-01
-.env.encrypted                | 1 key      | 2026-02-28
-config/prod.yaml              | 3 keys     | 2026-03-07
+### Workflow 6: Export Decrypted Secrets as Environment Variables
 
-⚠️ Warning: .env.encrypted has only 1 recipient (no backup key)
+**Use case:** Load secrets into shell environment for local development.
+
+```bash
+eval $(bash scripts/export-env.sh secrets.yaml)
+# Sets all values as environment variables
+echo $DATABASE_PASSWORD  # super-secret-password
+```
+
+### Workflow 7: Diff Encrypted Files
+
+**Use case:** See what changed in encrypted files in git.
+
+```bash
+bash scripts/setup-git-diff.sh
+# Configures git to show decrypted diffs for sops-encrypted files
+# Now `git diff` shows readable secret changes
 ```
 
 ## Configuration
@@ -168,143 +153,116 @@ config/prod.yaml              | 3 keys     | 2026-03-07
 ```yaml
 # .sops.yaml — place in project root
 creation_rules:
-  # Encrypt all files in secrets/ with these keys
-  - path_regex: secrets/.*
+  # Default: encrypt with these age keys
+  - path_regex: secrets/.*\.yaml$
     age: >-
-      age1abc123...,
-      age1def456...
+      age1key1...,
+      age1key2...
 
-  # Production secrets — restricted key
-  - path_regex: secrets/prod/.*
+  # Production secrets: restricted keys
+  - path_regex: secrets/prod/.*\.yaml$
     age: >-
-      age1prod789...
+      age1prodkey1...
 
-  # Encrypt .env files
-  - path_regex: \.env\.encrypted$
+  # .env files
+  - path_regex: \.env\..*$
     age: >-
-      age1abc123...
+      age1key1...
 ```
 
-### Partial Encryption (YAML/JSON only)
-
-SOPS can encrypt only specific keys, leaving structure visible:
-
-```yaml
-# Before encryption
-database:
-  host: db.example.com      # not secret
-  port: 5432                 # not secret
-  password: supersecret123   # SECRET!
-
-# After: sops encrypt --encrypted-regex '^(password|secret|key|token)$' db.yaml
-database:
-  host: db.example.com
-  port: 5432
-  password: ENC[AES256_GCM,data:abc123...,type:str]
-```
+### Environment Variables
 
 ```bash
-# Encrypt only sensitive keys
-sops encrypt \
-  --encrypted-regex '^(password|secret|key|token|api_key|private)$' \
-  --age $(bash scripts/get-pubkey.sh) \
-  config.yaml > config.enc.yaml
+# Age key location (default: ~/.config/sops/age/keys.txt)
+export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
+
+# Or inline key (for CI/CD)
+export SOPS_AGE_KEY="AGE-SECRET-KEY-1..."
 ```
 
 ## Advanced Usage
 
-### Multiple Recipients (Team Access)
+### CI/CD Integration
 
 ```bash
-# Add team member's public key
-bash scripts/add-recipient.sh /path/to/project age1teammember...
-
-# Remove team member (re-encrypts with remaining keys)
-bash scripts/remove-recipient.sh /path/to/project age1oldmember...
+# In your CI pipeline:
+# 1. Set SOPS_AGE_KEY as a CI secret
+# 2. Decrypt at deploy time
+bash scripts/decrypt.sh secrets/prod/config.yaml --output /tmp/config.yaml
+# 3. Use decrypted config
 ```
 
-### Using with Docker
+### Multiple Recipients
 
 ```bash
-# Decrypt secrets at container startup
-# Dockerfile:
-# COPY secrets.enc.yaml /app/secrets.enc.yaml
-# RUN sops decrypt /app/secrets.enc.yaml > /app/secrets.yaml
-
-# Or mount age key and decrypt at runtime
-docker run -v ~/.config/sops/age:/root/.config/sops/age \
-  -e SOPS_AGE_KEY_FILE=/root/.config/sops/age/keys.txt \
-  myapp
+# Add a team member's key
+bash scripts/add-recipient.sh age1newteammember... /path/to/project
+# Re-encrypts all files to include the new key
 ```
 
-### Git Pre-commit Hook
+### Audit Encrypted Files
 
 ```bash
-# Prevent committing unencrypted secrets
-bash scripts/install-hook.sh /path/to/project
+bash scripts/audit.sh /path/to/project
+# Scans for:
+# - Unencrypted secret files that should be encrypted
+# - Files encrypted with outdated keys
+# - .sops.yaml misconfigurations
+```
 
-# This adds a pre-commit hook that:
-# 1. Checks files matching secret patterns
-# 2. Verifies they're SOPS-encrypted
-# 3. Blocks commit if unencrypted secrets found
+### Encrypt Specific Keys Only
+
+```bash
+# Only encrypt 'password' and 'key' fields, leave others plaintext
+bash scripts/encrypt.sh config.yaml --encrypted-regex "^(password|key|secret|token)$"
 ```
 
 ## Troubleshooting
 
-### Issue: "no matching creation rule"
+### Issue: "no matching creation rules found"
 
-**Fix:** Ensure `.sops.yaml` exists in the project root and the file path matches a `path_regex`.
+**Fix:** Ensure `.sops.yaml` exists in project root with a `path_regex` matching your file.
 
 ```bash
-# Check .sops.yaml
-cat .sops.yaml
-
-# Verify regex matches your file
-echo "secrets/db.yaml" | grep -E 'secrets/.*'
+bash scripts/init-project.sh .
 ```
 
-### Issue: "could not decrypt data key"
+### Issue: "could not decrypt key"
 
-**Fix:** Your age key file is missing or doesn't match.
+**Fix:** Your age key file is missing or wrong.
 
 ```bash
 # Check key exists
-ls -la ~/.config/sops/age/keys.txt
+ls ~/.config/sops/age/keys.txt
 
-# Verify your public key is a recipient
-sops filestatus secrets.enc.yaml
+# Regenerate if needed
+bash scripts/setup-key.sh
+# Then re-encrypt files with the new key
 ```
 
-### Issue: "age: no identity matched any of the recipients"
+### Issue: "MAC mismatch"
 
-**Fix:** The file was encrypted for a different key. Re-encrypt with your key:
+**Fix:** File was modified after encryption without using sops.
 
 ```bash
-# Need someone with the original key to re-encrypt for you
-# Or use the backup key if available
+# Decrypt, fix, re-encrypt
+sops --decrypt --in-place file.yaml
+# Edit file
+sops --encrypt --in-place file.yaml
 ```
 
-## Scripts Reference
+## Key Principles
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/install.sh` | Install SOPS + age binaries |
-| `scripts/setup-keys.sh` | Generate age key pair |
-| `scripts/get-pubkey.sh` | Print your age public key |
-| `scripts/init-project.sh` | Initialize SOPS in a project |
-| `scripts/encrypt-dir.sh` | Encrypt all files in a directory |
-| `scripts/decrypt-all.sh` | Decrypt all SOPS files in a directory |
-| `scripts/rotate-keys.sh` | Re-encrypt all files with new key |
-| `scripts/audit.sh` | Audit encryption status |
-| `scripts/add-recipient.sh` | Add team member's key |
-| `scripts/remove-recipient.sh` | Remove team member's key |
-| `scripts/install-hook.sh` | Install git pre-commit hook |
-| `scripts/init-multienv.sh` | Set up multi-environment encryption |
+1. **Keys readable, values encrypted** — You can see WHAT's configured, not the secret values
+2. **Git-friendly** — Encrypted files commit and diff cleanly
+3. **No external service** — Everything runs locally, no HashiCorp Vault needed
+4. **Multiple recipients** — Share secrets with team via public keys
+5. **Rotation built-in** — Easy key rotation when team changes
 
 ## Dependencies
 
-- `sops` (3.9+) — Mozilla Secrets OPerationS
-- `age` (1.1+) — Modern file encryption
+- `sops` (3.8+) — Mozilla Secrets OPerationS
+- `age` (1.1+) — Modern encryption tool
 - `bash` (4.0+)
-- `jq` (optional, for JSON inspection)
-- `git` (optional, for hooks)
+- `jq` (for JSON processing)
+- Optional: `git` (for diff integration)

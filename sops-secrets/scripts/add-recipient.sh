@@ -1,32 +1,48 @@
 #!/bin/bash
+# Add a team member's age public key to the project
 set -euo pipefail
 
-PROJECT_DIR="${1:-.}"
-NEW_PUBKEY="${2:-}"
+NEW_KEY="${1:-}"
+PROJECT_DIR="${2:-.}"
 
-if [ -z "$NEW_PUBKEY" ]; then
-  echo "Usage: bash scripts/add-recipient.sh <project-dir> <age-pubkey>"
+if [ -z "$NEW_KEY" ]; then
+  echo "Usage: bash scripts/add-recipient.sh <age-public-key> [project-dir]"
+  echo "  Adds a team member's key and re-encrypts all secret files"
   exit 1
 fi
 
-SOPS_YAML="$PROJECT_DIR/.sops.yaml"
+if [[ ! "$NEW_KEY" == age1* ]]; then
+  echo "❌ Invalid age public key. Must start with 'age1'"
+  exit 1
+fi
 
-if [ ! -f "$SOPS_YAML" ]; then
+SOPS_CONFIG="$PROJECT_DIR/.sops.yaml"
+
+if [ ! -f "$SOPS_CONFIG" ]; then
   echo "❌ No .sops.yaml found in $PROJECT_DIR"
   exit 1
 fi
 
-# Add key to .sops.yaml
-if grep -q "$NEW_PUBKEY" "$SOPS_YAML"; then
-  echo "ℹ️  Key already exists in .sops.yaml"
+echo "🔑 Adding recipient: ${NEW_KEY:0:25}..."
+
+# Check if key already exists
+if grep -q "$NEW_KEY" "$SOPS_CONFIG"; then
+  echo "⚠️  Key already exists in .sops.yaml"
   exit 0
 fi
 
-# Append key to existing age recipients
-sed -i "s|\(age:.*>\-\)|\1\n      ${NEW_PUBKEY},|" "$SOPS_YAML"
+# Append key to first age block
+sed -i "0,/age: >-/{/age: >-/a\\      ${NEW_KEY},}" "$SOPS_CONFIG"
 
-echo "✅ Added recipient to .sops.yaml"
-echo "   Key: $NEW_PUBKEY"
-echo ""
-echo "Now re-encrypt files to include new recipient:"
-echo "   find $PROJECT_DIR -name '*.yaml' -exec sops updatekeys -y {} \\;"
+# Re-encrypt files with new key set
+echo "🔄 Re-encrypting files to include new recipient..."
+
+find "$PROJECT_DIR" -type f \( -name "*.yaml" -o -name "*.json" -o -name "*.env" -o -name "*.env.*" \) \
+  ! -name ".sops.yaml" ! -path "*/.git/*" ! -path "*/node_modules/*" | while read -r file; do
+  if grep -q "ENC\[AES256_GCM" "$file" 2>/dev/null; then
+    echo "  🔐 Updating: $file"
+    sops updatekeys --yes "$file" 2>/dev/null || echo "  ⚠️  Failed: $file"
+  fi
+done
+
+echo "✅ Recipient added. Commit .sops.yaml and updated encrypted files."
